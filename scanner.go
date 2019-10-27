@@ -52,9 +52,7 @@ func (sc *Scanner) blockSplit(data []byte, atEOF bool) (advance int, token []byt
 		fmt.Printf("FOUND BLOCK AT.. %v\n", i)
 		return i + len(bzip2BlockMagic), data[:i], nil
 	}
-
 	// if at EOF ... look for trailer by working backwards.
-
 	if i := bytes.Index(data, bzip2EOSMagic); i >= 0 {
 		fmt.Printf("FOUND EOS AT.. %v\n", i)
 		return i + len(bzip2EOSMagic), data[:i], nil
@@ -75,13 +73,13 @@ func (sc *Scanner) blockSplit(data []byte, atEOF bool) (advance int, token []byt
 // is validated and consumed. The last block will be the stream trailer
 // and this is also consumed and validated internally.
 type Scanner struct {
-	sc        *bufio.Scanner
-	err       error
-	first     bool
-	header    [4]byte
-	blockSize int
-	max       int
-	sizes     []float64
+	underlying *bufio.Scanner
+	err        error
+	first      bool
+	header     [4]byte
+	blockSize  int
+	max        int
+	sizes      []float64
 }
 
 // NewScanner returns a new instance of Scanner.
@@ -96,8 +94,8 @@ func NewScanner(rd io.Reader, opts ...ScannerOption) *Scanner {
 	underlying := bufio.NewScanner(rd)
 	underlying.Buffer(scopts.buf, scopts.max)
 	bzs := &Scanner{
-		sc:    underlying,
-		first: true,
+		underlying: underlying,
+		first:      true,
 	}
 	if s := scopts.initialSize; s > 0 {
 		bzs.sizes = make([]float64, 0, s)
@@ -110,8 +108,8 @@ func (sc *Scanner) scanHeader() bool {
 	if !sc.first {
 		return true
 	}
-	if !sc.sc.Scan() {
-		if err := sc.sc.Err(); err != nil {
+	if !sc.underlying.Scan() {
+		if err := sc.underlying.Err(); err != nil {
 			sc.err = err
 			return false
 		}
@@ -125,7 +123,7 @@ func (sc *Scanner) scanHeader() bool {
 	//                           '0' for //Bzip1 (deprecated)
 	//	.hundred_k_blocksize:8 = '1'..'9' block-size 100 kB-900 kB
 	//                           (uncompressed)
-	header := sc.sc.Bytes()
+	header := sc.underlying.Bytes()
 	if len(header) != 4 {
 		sc.err = fmt.Errorf("stream header is the wrong size: %v", len(header))
 		return false
@@ -156,10 +154,10 @@ func (sc *Scanner) Scan() bool {
 		return false
 	}
 	fmt.Printf("scanning... \n")
-	if sc.sc.Scan() {
+	if sc.underlying.Scan() {
 		fmt.Printf("scanning true \n")
 
-		l := len(sc.sc.Bytes())
+		l := len(sc.underlying.Bytes())
 		if l > sc.max {
 			sc.max = l
 		}
@@ -203,7 +201,7 @@ func (sc *Scanner) BlockSize() int {
 // as a copy of the underlying data to allow for concurrent use
 // and does not include the magic number.
 func (sc *Scanner) Blocks() []byte {
-	cpy := make([]byte, sc.underlying.Bytes())
+	cpy := make([]byte, len(sc.underlying.Bytes()))
 	copy(cpy, sc.underlying.Bytes())
 	return cpy
 }
@@ -213,5 +211,5 @@ func (sc *Scanner) Err() error {
 	if sc.err != nil {
 		return sc.err
 	}
-	return sc.sc.Err()
+	return sc.underlying.Err()
 }
