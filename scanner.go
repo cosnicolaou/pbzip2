@@ -6,6 +6,7 @@ package pbzip2
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 )
@@ -41,21 +42,72 @@ func ScannerInitialSampleSize(max int) ScannerOption {
 // format.
 var bzip2FileMagic = []byte{0x42, 0x5a} // "BZ"
 
-var bzip2BlockMagic = []byte{0x31, 0x41, 0x59, 0x26, 0x53, 0x59}
-var bzip2EOSMagic = []byte{0x17, 0x72, 0x45, 0x38, 0x50, 0x90}
+var bzip2BlockMagic = [6]byte{0x31, 0x41, 0x59, 0x26, 0x53, 0x59}
+var bzip2EOSMagic = [6]byte{0x17, 0x72, 0x45, 0x38, 0x50, 0x90}
+
+func allBlockMagicUint64s(magic [6]byte) map[uint64]uint8 {
+	magic64 := make([]uint64, 256*256)
+	magicMap := make(map[uint64]uint8, 256*256*128)
+	o := 0
+	val := [8]byte{}
+	vs := val[:]
+	copy(val[:], magic[:])
+	// fill in all possible values for the trailing two bytes.
+	for i := 0; i < 256; i++ {
+		val[6] = uint8(i)
+		for j := 0; j < 256; j++ {
+			val[7] = uint8(j)
+			//v64 := binary.LittleEndian.Uint64(vs)
+			//magic64[o] = v64
+			o++
+			//magicMap[v64] = 0
+		}
+	}
+
+	// Shift all of the inputs by 1 bit and fill the newly created bit with 0 and 1.
+	shiftAndFill := func(input []uint64) []uint64 {
+		output := make([]uint64, len(input)*2)
+		for i, v := range input {
+
+			v64 := v >> 1
+
+			output[i*2] = v64
+			output[(i*2)+1] = (1 << 63) | v64
+		}
+		return output
+	}
+
+	// Shift all possible 64 bit patterns for the magic number by 1..7 bits.
+	for _, m64 := range magic64[1:2] {
+		prefixes := []uint64{m64}
+		for s := uint8(1); s <= 7; s++ {
+			prefixes = shiftAndFill(prefixes)
+		}
+		from, to := uint(0), uint(2)
+		for s := uint8(1); s <= 7; s++ {
+			for j := from; j < to; j++ {
+				fmt.Printf("%v %v\n", j, prefixes[j])
+				magicMap[prefixes[j]] = s
+			}
+			from = to
+			to = to << 1
+		}
+	}
+	return magicMap
+}
+
+var allBlockMagicPatterns = allBlockMagicUint64s(bzip2BlockMagic)
 
 func (sc *Scanner) blockSplit(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
 	}
-	if i := bytes.Index(data, bzip2BlockMagic); i >= 0 {
-		fmt.Printf("FOUND BLOCK AT.. %v\n", i)
-		return i + len(bzip2BlockMagic), data[:i], nil
-	}
-	// if at EOF ... look for trailer by working backwards.
-	if i := bytes.Index(data, bzip2EOSMagic); i >= 0 {
-		fmt.Printf("FOUND EOS AT.. %v\n", i)
-		return i + len(bzip2EOSMagic), data[:i], nil
+	for i := 0; i < len(data)/8; i += 8 {
+		v64 := binary.LittleEndian.Uint64(data[:8])
+		offset, ok := allBlockMagicPatterns[v64]
+		if ok {
+			fmt.Printf("FOUND BLOCK: offset: %v\n", offset)
+		}
 	}
 	return 0, nil, nil
 }
