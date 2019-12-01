@@ -53,8 +53,9 @@ type Scanner struct {
 	brd             *bufio.Reader
 	err             error
 	buf             []byte
+	bufBitSize      int
+	bufBitOffset    int
 	prevBitOffset   int
-	nextBitOffset   int
 	first, done     bool
 	header, trailer [4]byte
 	blockSize       int
@@ -140,45 +141,44 @@ func (sc *Scanner) Scan() bool {
 		if bytes.HasPrefix(buf, bzip2BlockMagic[:]) {
 			sc.brd.Discard(len(bzip2BlockMagic))
 			buf = buf[len(bzip2BlockMagic):]
+			sc.bufBitOffset = 0
+			sc.prevBitOffset = 0
 		}
 	}
 
 	// Look for the next block magic or eof.
-	byteOffset, bitOffset := findInStream(firstBlockMagicLookup, secondBlockMagicLookup, buf, bzip2BlockMagic[:])
+	byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, buf)
 	if byteOffset == -1 {
 		if !eof {
 			sc.err = fmt.Errorf("failed to find next block within expected max buffer size")
 			return false
 		}
-		trailer, trailerSize, _ := findTrailingMagicAndCRC(buf, bzip2EOSMagic[:])
+		trailer, trailerSize, trailerOffset := findTrailingMagicAndCRC(buf, bzip2EOSMagic[:])
 		if trailerSize == -1 {
 			sc.err = fmt.Errorf("failed to find trailer")
 			return false
 		}
 		copy(sc.trailer[:], trailer)
 		sc.done = true
-		// Note: this is the last block, so leave prevBitOffset as is.
-		//       The block itself is simply the current buffer with the trailer
-		//       removed.
-		fmt.Printf("EOF: %08b\n", buf)
-		fmt.Printf("EOF: %08b\n", bzip2BlockMagic[:])
 		sc.buf = make([]byte, len(buf)-trailerSize)
-		copy(sc.buf, buf)
+		copy(sc.buf, buf[:len(buf)-trailerSize])
+		sc.bufBitOffset = sc.prevBitOffset
+		sc.bufBitSize = (len(sc.buf) * 8) - 8 + trailerOffset
+		if sc.prevBitOffset > 0 {
+			sc.bufBitSize -= sc.prevBitOffset
+		}
 		return true
 	}
-	sc.buf = make([]byte, len(buf)-len(bzip2BlockMagic))
-	sc.prevBitOffset = sc.nextBitOffset
-	sc.nextBitOffset = bitOffset
-	// skip past the magic number, but make sure to not miss
-	// the first byte of the next buffer if the bit offset is non
-	// zero.
-	overlap := 0
-	if bitOffset != 0 {
-		overlap = 1
+	sc.buf = make([]byte, byteOffset+1)
+	copy(sc.buf, buf[:byteOffset+1])
+	sc.bufBitOffset = sc.prevBitOffset
+	sc.bufBitSize = (byteOffset * 8) + bitOffset
+	if sc.prevBitOffset > 0 {
+		sc.bufBitSize -= sc.prevBitOffset
 	}
-	copy(sc.buf, buf[:len(buf)-len(bzip2BlockMagic)])
-	fmt.Printf("CB : %08b\n", sc.buf)
-	sc.brd.Discard(byteOffset + len(bzip2BlockMagic) - overlap)
+	sc.prevBitOffset = bitOffset
+	// skip the magic # before starting the search for the next magic #.
+	sc.brd.Discard(byteOffset + len(bzip2BlockMagic))
 	return true
 }
 
@@ -199,8 +199,8 @@ func (sc *Scanner) StreamCRC() uint32 {
 
 // Blocks returns the current block and the bitoffset into that block
 // at which the data starts.
-func (sc *Scanner) Block() ([]byte, int) {
-	return sc.buf, sc.prevBitOffset
+func (sc *Scanner) Block() ([]byte, int, int) {
+	return sc.buf, sc.bufBitOffset, sc.bufBitSize
 }
 
 // Err returns any error encountered by the scanner.

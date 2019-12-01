@@ -5,7 +5,10 @@
 // Package bzip2 implements bzip2 decompression.
 package bzip2
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 // There's no RFC for bzip2. I used the Wikipedia page for reference and a lot
 // of guessing: https://en.wikipedia.org/wiki/Bzip2
@@ -38,6 +41,18 @@ type reader struct {
 	lastByte    int      // the last byte value seen.
 	byteRepeats uint     // the number of repeats of lastByte seen.
 	repeats     uint     // the number of copies of lastByte to output.
+
+	recordStats bool
+	stats       Stats
+}
+
+// Stats contains the offset and crc information for the decoded stream.
+type Stats struct {
+	// Offsets are in bits and from the start of the file.
+	BlockStartOffsets []uint // Offset of each block in bits.
+	EndOfStreamOffset uint   // Offset of the End of Stream marker
+	BlockCRCs         []uint32
+	StreamCRC         uint32
 }
 
 // NewReader returns an io.Reader which decompresses bzip2 data from r.
@@ -47,6 +62,22 @@ func NewReader(r io.Reader) io.Reader {
 	bz2 := new(reader)
 	bz2.br = newBitReader(r)
 	return bz2
+}
+
+// NewReaderWithStats returns a reader that will gather statistics.
+func NewReaderWithStats(r io.Reader) io.Reader {
+	bz2 := new(reader)
+	bz2.recordStats = true
+	bz2.br = newBitReader(r)
+	return bz2
+}
+
+// StreamStats returns any statistics gathered for this stream.
+func StreamStats(r io.Reader) Stats {
+	if br, ok := r.(*reader); ok {
+		return br.stats
+	}
+	return Stats{}
 }
 
 const bzip2FileMagic = 0x425a // "BZ"
@@ -173,6 +204,9 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 			bz2.br.err = StructuralError("block checksum mismatch")
 			return 0, bz2.br.err
 		}
+		if bz2.recordStats {
+			bz2.stats.BlockCRCs = append(bz2.stats.BlockCRCs, bz2.blockCRC)
+		}
 
 		// Find next block.
 		br := &bz2.br
@@ -182,20 +216,34 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 
 		case bzip2BlockMagic:
 			// Start of block.
+			if bz2.recordStats {
+				offset := br.bitsUsed() - 48
+				fmt.Printf("X: %v : %v + %v\n", offset, (br.bytesRead*8)-48, br.bits)
+				bz2.stats.BlockStartOffsets = append(bz2.stats.BlockStartOffsets, offset)
+			}
 			err := bz2.readBlock()
 			if err != nil {
 				return 0, err
 			}
 
 		case bzip2FinalMagic:
+			if bz2.recordStats {
+				offset := br.bitsUsed() - 48
+				bz2.stats.EndOfStreamOffset = offset
+			}
 			// Check end-of-file CRC.
 			wantFileCRC := uint32(br.ReadBits64(32))
+
 			if br.err != nil {
 				return 0, br.err
 			}
 			if bz2.fileCRC != wantFileCRC {
 				br.err = StructuralError("file checksum mismatch")
 				return 0, br.err
+			}
+
+			if bz2.recordStats {
+				bz2.stats.StreamCRC = bz2.fileCRC
 			}
 
 			// Skip ahead to byte boundary.

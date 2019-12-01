@@ -6,6 +6,7 @@ package bzip2
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 )
 
@@ -14,10 +15,11 @@ import (
 // because the error handling was verbose. Instead, any error is kept and can
 // be checked afterwards.
 type bitReader struct {
-	r    io.ByteReader
-	n    uint64
-	bits uint
-	err  error
+	r         io.ByteReader
+	n         uint64
+	bits      uint
+	err       error
+	bytesRead int
 }
 
 // newBitReader returns a new bitReader reading from r. If r is not
@@ -36,6 +38,10 @@ func newBitReader(r io.Reader) bitReader {
 func (br *bitReader) ReadBits64(bits uint) (n uint64) {
 	for bits > br.bits {
 		b, err := br.r.ReadByte()
+		if bits == 32 {
+			fmt.Printf("%02x", b)
+		}
+		br.bytesRead++
 		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
 		}
@@ -64,7 +70,14 @@ func (br *bitReader) ReadBits64(bits uint) (n uint64) {
 	// least-significant places and masks off anything above.
 	n = (br.n >> (br.bits - bits)) & ((1 << bits) - 1)
 	br.bits -= bits
+	if bits == 32 {
+		fmt.Println()
+	}
 	return
+}
+
+func (br *bitReader) bitsUsed() uint {
+	return (uint(br.bytesRead) * 8) - br.bits
 }
 
 func (br *bitReader) ReadBits(bits uint) (n int) {
