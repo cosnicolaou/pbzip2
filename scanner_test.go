@@ -1,7 +1,7 @@
 package pbzip2
 
 import (
-	"encoding/binary"
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
+	"sync"
 	"testing"
+
+	"github.com/cosnicolaou/pbzip2/bzip2"
 )
 
 func getData(name string) (reader io.ReadCloser, original []byte, err error) {
@@ -60,7 +62,6 @@ func TestScan(t *testing.T) {
 		t.Fatalf("failed to get tmp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpdir)
-
 	for _, tc := range []struct {
 		name       string
 		data       []byte
@@ -70,12 +71,20 @@ func TestScan(t *testing.T) {
 		blockSizes []int
 	}{
 		{"empty", nil, "-1", 0, bc(), bci()},
-		{"hello", []byte("hello world\n"), "-1", 1324148790, bc(1324148790), bci(253)},
-		{"100KB1", genPredictableRandomData(100 * 1024), "-1", 2846214228, bc(984137596, 3707025068), bci(806206, 22712)},
-		{"300KB1", genPredictableRandomData(300 * 1024), "-1", 2560071082,
+		{"hello", []byte("hello world\n"), "-1",
+			1324148790,
+			bc(1324148790),
+			bci(253)},
+		{"100KB1", genPredictableRandomData(100 * 1024), "-1",
+			2846214228,
+			bc(984137596, 3707025068),
+			bci(806206, 22712)},
+		{"300KB1", genPredictableRandomData(300 * 1024), "-1",
+			2560071082,
 			bc(984137596, 1527206082, 1102975844, 2729642890),
 			bci(806206, 806273, 806182, 61754)},
-		{"400KB1", genPredictableRandomData(400 * 1024), "-1", 182711008,
+		{"400KB1", genPredictableRandomData(400 * 1024), "-1",
+			182711008,
 			bc(984137596, 1527206082, 1102975844, 1428961015, 3572671310),
 			bci(806206, 806273, 806182, 806254, 81086)},
 	} {
@@ -85,23 +94,62 @@ func TestScan(t *testing.T) {
 		}
 		defer rd.Close()
 		sc := NewScanner(rd)
-		var crcs []uint32
-		var sizes []int
+		var data []byte
+		n := 0
+		var (
+			pwg    sync.WaitGroup
+			pbuf   []byte
+			perr   error
+			prgCh  = make(chan Progress, 3)
+			prgwg  sync.WaitGroup
+			prgerr error
+		)
+		prgwg.Add(1)
+		go func() {
+			next := uint64(1)
+			var err error
+			for p := range prgCh {
+				fmt.Printf("%#v\n", p)
+				if p.Block != next {
+					err = fmt.Errorf("out of sequence block %#v\n", p)
+					break
+				}
+				next++
+			}
+			prgerr = err
+			prgwg.Done()
+		}()
+		dc := NewDecompressor(3, prgCh)
+
+		pwg.Add(1)
+		go func() {
+			pbuf, err = ioutil.ReadAll(dc)
+			if err != nil {
+				t.Errorf("failed to read all from parallel decompressor: %v", err)
+			}
+			pwg.Done()
+		}()
 		for sc.Scan() {
-			block, bitOffset, blockSize := sc.Block()
+			block, bitOffset, blockSize, blockCRC := sc.Block()
+			// Parallel decompress.
+			dc.NewBlock(sc.BlockSize(), block, bitOffset, blockCRC)
 			if len(block) == 0 {
 				continue
 			}
-			tmp := make([]byte, 5)
-			copy(tmp, block[:5])
-			//fmt.Printf("SH: %08b offset %v\n", tmp, bitOffset)
-			for i := 8; i > bitOffset; i-- {
-				tmp = bitstreamShift(tmp)
-				//fmt.Printf("SH: %08b\n", tmp)
+			if got, want := blockCRC, tc.blockCRCs[n]; got != want {
+				t.Errorf("%v: got %v, want %v", tc.name, got, want)
 			}
-			fmt.Printf("CRC: %02x (offset: %v)\n", tmp, bitOffset)
-			crcs = append(crcs, binary.BigEndian.Uint32(tmp[1:5]))
-			sizes = append(sizes, blockSize)
+			if got, want := blockSize, tc.blockSizes[n]; got != want {
+				t.Errorf("%v: got %v, want %v", tc.name, got, want)
+			}
+			// Synchronous scan + decompress.
+			rd := bzip2.NewBlockReader(sc.BlockSize(), block, bitOffset)
+			buf, err := ioutil.ReadAll(rd)
+			if err != nil {
+				t.Errorf("%v: decompression failed: %v", tc.name, err)
+			}
+			data = append(data, buf...)
+			n++
 		}
 		if err := sc.Err(); err != nil {
 			t.Errorf("%v: scan failed: %v", tc.name, err)
@@ -110,13 +158,32 @@ func TestScan(t *testing.T) {
 		if got, want := sc.StreamCRC(), tc.streamCRC; got != want {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
 		}
-		if got, want := crcs, tc.blockCRCs; !reflect.DeepEqual(got, want) {
+		if got, want := n, len(tc.blockSizes); got != want {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
 		}
-		if got, want := sizes, tc.blockSizes; !reflect.DeepEqual(got, want) {
+		firstN := func(n int, b []byte) []byte {
+			if len(b) > n {
+				return b[:n]
+			}
+			return b
+		}
+		if got, want := data, tc.data; !bytes.Equal(got, want) {
+			t.Errorf("%v: got %v..., want %v...", tc.name, firstN(10, got), firstN(10, want))
+		}
+		if got, want := dc.Finish(), tc.streamCRC; got != want {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
 		}
-
+		pwg.Wait()
+		if err := perr; err != nil {
+			t.Errorf("failed to read from paralle decompressor: %v", err)
+		}
+		close(prgCh)
+		if got, want := pbuf, tc.data; !bytes.Equal(got, want) {
+			t.Errorf("%v: got %v..., want %v...", tc.name, firstN(10, got), firstN(10, want))
+		}
+		prgwg.Wait()
+		if err := prgerr; err != nil {
+			t.Errorf("progress indicator error: %v", err)
+		}
 	}
-
 }

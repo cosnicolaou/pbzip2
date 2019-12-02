@@ -53,6 +53,7 @@ type Scanner struct {
 	brd             *bufio.Reader
 	err             error
 	buf             []byte
+	blockCRC        uint32
 	bufBitSize      int
 	bufBitOffset    int
 	prevBitOffset   int
@@ -101,9 +102,21 @@ func (sc *Scanner) scanHeader() bool {
 		sc.err = fmt.Errorf("bad block size: %c", s)
 		return false
 	}
-	sc.blockSize = 100 * 1024 * int(sc.header[3]-'0')
-	sc.brd = bufio.NewReaderSize(sc.rd, sc.blockSize+1024)
+	sc.blockSize = 100 * 1000 * int(sc.header[3]-'0')
+	sc.brd = bufio.NewReaderSize(sc.rd, sc.blockSize+2048)
 	return true
+}
+
+func readCRC(block []byte, shift int) uint32 {
+	if len(block) < 4 {
+		return 0
+	}
+	tmp := make([]byte, 5)
+	copy(tmp, block[:5])
+	for i := 8; i > shift; i-- {
+		tmp = bitstreamShift(tmp)
+	}
+	return binary.BigEndian.Uint32(tmp[1:5])
 }
 
 // Scan returns true if there a block to be returned.
@@ -164,6 +177,7 @@ func (sc *Scanner) Scan() bool {
 		copy(sc.buf, buf[:len(buf)-trailerSize])
 		sc.bufBitOffset = sc.prevBitOffset
 		sc.bufBitSize = (len(sc.buf) * 8) - 8 + trailerOffset
+		sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
 		if sc.prevBitOffset > 0 {
 			sc.bufBitSize -= sc.prevBitOffset
 		}
@@ -173,6 +187,7 @@ func (sc *Scanner) Scan() bool {
 	copy(sc.buf, buf[:byteOffset+1])
 	sc.bufBitOffset = sc.prevBitOffset
 	sc.bufBitSize = (byteOffset * 8) + bitOffset
+	sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
 	if sc.prevBitOffset > 0 {
 		sc.bufBitSize -= sc.prevBitOffset
 	}
@@ -182,13 +197,22 @@ func (sc *Scanner) Scan() bool {
 	return true
 }
 
-// StreamHeader returns the stream header. It can only
-// be called after Scan has been called at least once successfully.
-func (sc *Scanner) StreamHeader() []byte {
+// Header returns the stream header. It can onlybe called after Scan has been
+// called at least once successfully.
+func (sc *Scanner) Header() []byte {
 	if sc.first {
 		return nil
 	}
 	return sc.header[:]
+}
+
+// BlockSize returns the block size being used bu this stream.
+// It can onlybe called after Scan has been called at least once successfully.
+func (sc *Scanner) BlockSize() int {
+	if sc.first {
+		return 0
+	}
+	return sc.blockSize
 }
 
 // StreamCRC returns the stream CRC. It can only
@@ -198,9 +222,9 @@ func (sc *Scanner) StreamCRC() uint32 {
 }
 
 // Blocks returns the current block and the bitoffset into that block
-// at which the data starts.
-func (sc *Scanner) Block() ([]byte, int, int) {
-	return sc.buf, sc.bufBitOffset, sc.bufBitSize
+// at which the data starts as well as the crc
+func (sc *Scanner) Block() (buf []byte, bitOffsize, sizeInBits int, crc uint32) {
+	return sc.buf, sc.bufBitOffset, sc.bufBitSize, sc.blockCRC
 }
 
 // Err returns any error encountered by the scanner.

@@ -6,7 +6,6 @@ package bzip2
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 )
 
@@ -38,9 +37,6 @@ func newBitReader(r io.Reader) bitReader {
 func (br *bitReader) ReadBits64(bits uint) (n uint64) {
 	for bits > br.bits {
 		b, err := br.r.ReadByte()
-		if bits == 32 {
-			fmt.Printf("%02x", b)
-		}
 		br.bytesRead++
 		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
@@ -70,9 +66,6 @@ func (br *bitReader) ReadBits64(bits uint) (n uint64) {
 	// least-significant places and masks off anything above.
 	n = (br.n >> (br.bits - bits)) & ((1 << bits) - 1)
 	br.bits -= bits
-	if bits == 32 {
-		fmt.Println()
-	}
 	return
 }
 

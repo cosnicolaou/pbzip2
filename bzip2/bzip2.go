@@ -6,7 +6,6 @@
 package bzip2
 
 import (
-	"fmt"
 	"io"
 )
 
@@ -218,7 +217,6 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 			// Start of block.
 			if bz2.recordStats {
 				offset := br.bitsUsed() - 48
-				fmt.Printf("X: %v : %v + %v\n", offset, (br.bytesRead*8)-48, br.bits)
 				bz2.stats.BlockStartOffsets = append(bz2.stats.BlockStartOffsets, offset)
 			}
 			err := bz2.readBlock()

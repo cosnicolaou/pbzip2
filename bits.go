@@ -89,6 +89,9 @@ func allShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 // the two lookup tables, in its input treating that input as a bitstream.
 // It returns the offset of the byte containing the first byte of the
 // pattern and the bit offset in that byte that the pattern starts at.
+// That is, if the pattern occurs in the third byte, the byte offset will be
+// two. If the pattern starts at the 2nd bit in the third byte, the byte offset
+// is still two, and the bit offset will be 2.
 func scanBitStream(first, second map[uint32]uint8, input []byte) (int, int) {
 	pos := 0
 	il := len(input)
