@@ -1,71 +1,223 @@
 package main
 
 import (
-	"bytes"
-	"compress/bzip2"
 	"context"
+	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
-	"net/url"
+	"net/http"
 	"os"
+	"os/signal"
+	"runtime"
 	"strings"
+	"sync"
 
+	"github.com/cosnicolaou/pbzip2"
 	"github.com/grailbio/base/file"
-	"github.com/spf13/cobra"
-	"neeva.co/cmdutil"
-	"neeva.co/util/jsonutil"
-	"v.io/x/lib/cmd/pflagvar"
+	"github.com/grailbio/base/must"
+	"github.com/schollz/progressbar/v2"
+	"v.io/x/lib/cmd/flagvar"
 )
 
-var (
-	inputFile string
-)
-
-func init() {
-	flag.StringVar(&inputFile, "", "input file or URL")
+var commandline struct {
+	InputFile        string `cmd:"input,,'input file, s3 path, or url'"`
+	Concurrency      int    `cmd:"concurrency,4,'concurrency for the decompression'"`
+	ProgressBar      bool   `cmd:"progress,true,display a progress bar"`
+	OutputFile       string `cmd:"output,,'output file or s3 path, set to - for stdout'"`
+	MaxBlockOverhead int    `cmd:"max-block-overhead,,'the max size of the per block coding tables'"`
+	Verbose          bool   `cmd:"verbose,false,verbose debug/trace information"`
 }
 
-func sharderCmd(cmd *cobra.Command, args []string) error {
+func init() {
+	must.Nil(flagvar.RegisterFlagsInStruct(flag.CommandLine, "cmd", &commandline,
+		map[string]interface{}{
+			"concurrency": runtime.GOMAXPROCS(-1),
+		}, nil))
+}
+
+func progressBar(ctx context.Context, ch chan pbzip2.Progress, size int64) {
+	next := uint64(1)
+	bar := progressbar.NewOptions64(size,
+		progressbar.OptionSetBytes64(size),
+		progressbar.OptionSetPredictTime(true))
+	bar.RenderBlank()
+	for {
+		select {
+		case p := <-ch:
+			if p.Block == 0 {
+				fmt.Println()
+				return
+			}
+			bar.Add(p.Compressed)
+			if p.Block != next {
+				log.Fatalf("out of sequence block %#v\n", p)
+			}
+			next++
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func OnSignal(fn func(), signals ...os.Signal) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, signals...)
+	go func() {
+		sig := <-sigCh
+		fmt.Println("stopping on... ", sig)
+		fn()
+	}()
+}
+
+func openFileOrURL(ctx context.Context, name string) (io.Reader, int64, func(context.Context) error, error) {
+	if strings.HasPrefix(name, "http") {
+		resp, err := http.Get(name)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		return resp.Body,
+			resp.ContentLength,
+			func(context.Context) error {
+				resp.Body.Close()
+				return nil
+			},
+
+			err
+	}
+	info, err := file.Stat(ctx, name)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	file, err := file.Open(ctx, name)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	return file.Reader(ctx), info.Size(), file.Close, nil
+}
+
+func createFile(ctx context.Context, name string) (io.Writer, func(context.Context) error, error) {
+	if name == "-" {
+		return os.Stdout,
+			func(context.Context) error {
+				return nil
+			},
+			nil
+	}
+	file, err := file.Create(ctx, name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return file.Writer(ctx), file.Close, nil
+}
+
+func main() {
+	flag.Parse()
+	if err := runner(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runner() (returnErr error) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
-	cmdutil.OnSignal(cancel, os.Interrupt)
+	OnSignal(cancel, os.Interrupt)
 
-	input := inputFile
-	if u, err := url.Parse(input); err == nil && (u.Scheme != "") {
-		// initiate multiple part download.
-		// then start parallel bzip.
-		return fmt.Errorf("download not implemented yet: %v", input)
+	bzOpts := []pbzip2.DecompressorOption{
+		pbzip2.BZConcurrency(commandline.Concurrency),
+		pbzip2.BZVerbose(commandline.Verbose),
 	}
-	if !strings.HasSuffix(input, ".bz2") {
-		return fmt.Errorf("sharding a non bz2 file is not yet supported, sharding only .bz2 files for now.")
+	scanOpts := []pbzip2.ScannerOption{}
+
+	if commandline.MaxBlockOverhead > 0 {
+		scanOpts = append(scanOpts,
+			pbzip2.ScanBlockOverhead(commandline.MaxBlockOverhead))
 	}
-	inputFile, err := file.Open(ctx, input)
+
+	if len(commandline.InputFile) == 0 {
+		return fmt.Errorf("please specify an input file, s3 path or url")
+	}
+
+	if len(commandline.OutputFile) == 0 {
+		return fmt.Errorf("please specify an output file or s3 path")
+	}
+
+	rd, size, readerCleanup, err := openFileOrURL(ctx, commandline.InputFile)
 	if err != nil {
-		log.Fatalf("failed to open %v: %v", input, err)
+		return err
 	}
-	reader := inputFile.Reader(ctx)
-	sc := jsonutil.NewBZ2BlockScanner(reader)
-	for sc.Scan() {
-		trailer := []byte{0x17, 0x72, 0x45, 0x38, 0x50, 0x90}
-		block := sc.Block()
-		header := sc.StreamHeader()
-		stream := make([]byte, len(block)+len(header)+len(trailer))
-		copy(stream[:len(header)], header)
-		copy(stream[len(header):], block)
-		copy(stream[len(header)+len(block):], trailer)
-		dec := bzip2.NewReader(bytes.NewBuffer(stream))
-		buf, err := ioutil.ReadAll(dec)
-		if err != nil {
-			fmt.Printf("ERR: %v\n", err)
-		}
-		_ = buf
-		fmt.Printf("STREAM %x + %x = %x\n", header, block[:10], stream[:12])
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+	defer readerCleanup(ctx)
+
+	wr, writerCleanup, err := createFile(ctx, commandline.OutputFile)
+	if err != nil {
+		return err
 	}
-	_, max := sc.Sizes()
-	fmt.Printf("max bzip record size: %v\n", max)
-	return sc.Err()
+	defer func() {
+		if err := writerCleanup(ctx); err != nil {
+			log.Printf("writer cleanup: %v", err)
+			if returnErr == nil {
+				returnErr = err
+			}
+		}
+	}()
+
+	// Kick off the progress bar, if requested and the output is not
+	// being written to stdout.
+	var (
+		progressBarCh chan pbzip2.Progress
+		progressBarWg sync.WaitGroup
+	)
+	if commandline.ProgressBar && commandline.OutputFile != "-" {
+		progressBarCh = make(chan pbzip2.Progress, commandline.Concurrency)
+		progressBarWg.Add(1)
+		bzOpts = append(bzOpts, pbzip2.BZSendUpdates(progressBarCh))
+		go func() {
+			progressBar(ctx, progressBarCh, size)
+			progressBarWg.Done()
+		}()
+	}
+
+	sc := pbzip2.NewScanner(rd, scanOpts...)
+	dc := pbzip2.NewDecompressor(ctx, bzOpts...)
+
+	// Kick off the output routine.
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(errCh)
+		_, err := io.Copy(wr, dc.Reader())
+		if err != nil && err != io.EOF {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+
+	bn := 0
+	for sc.Scan(ctx) {
+		block, bitOffset, size, blockCRC := sc.Block()
+		if commandline.Verbose {
+			fmt.Printf("block # %v: %v bits\n", bn, size)
+		}
+		bn++
+		dc.Decompress(sc.BlockSize(), block, bitOffset, blockCRC)
+	}
+	if err := sc.Err(); err != nil {
+		return fmt.Errorf("scanner: %v", err)
+	}
+
+	crc, err := dc.Finish()
+	if err != nil {
+		return fmt.Errorf("decompressor: %v", err)
+	}
+	if got, want := crc, sc.StreamCRC(); got != want {
+		returnErr = fmt.Errorf("mismatched CRC: %v != %v", got, want)
+	}
+
+	returnErr = <-errCh
+	if progressBarCh != nil {
+		close(progressBarCh)
+		progressBarWg.Wait()
+	}
+	return
 }

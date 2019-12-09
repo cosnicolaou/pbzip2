@@ -114,27 +114,31 @@ func insertMagic(buf, magic []byte, p int) []byte {
 	return buf
 }
 
+func shifted(shift int) []byte {
+	buf := make([]byte, len(bzip2BlockMagic)+1)
+	copy(buf, bzip2BlockMagic[:])
+	for i := 0; i < shift; i++ {
+		buf = bitstreamShift(buf)
+	}
+	return buf
+}
 func TestFindPatterns(t *testing.T) {
 	Init()
-	shifted := func(shift int) []byte {
-		buf := make([]byte, len(bzip2BlockMagic)+1)
-		copy(buf, bzip2BlockMagic[:])
-		for i := 0; i < shift; i++ {
-			buf = bitstreamShift(buf)
-		}
-		return buf
-	}
 	for _, tc := range []struct {
 		buf                   []byte
 		byteOffset, bitOffset int
 	}{
 		{bzip2BlockMagic[:], 0, 0},
 		{append(bzip2BlockMagic[:], 0x11), 0, 0},
+		{append(bzip2BlockMagic[:], 0x26), 0, 0},
 		{append(bzip2BlockMagic[:], 0xda, 0x4b, 0xd0, 0xce), 0, 0},
+		{append([]byte{0xff}, bzip2BlockMagic[:]...), 1, 0},
+		{append([]byte{0x2b, 0xff}, bzip2BlockMagic[:]...), 2, 0},
 		{append([]byte{0x0}, bzip2BlockMagic[:]...), 1, 0},
 		{append([]byte{0x0}, shifted(1)...), 1, 1},
 		{append([]byte{0x0}, shifted(2)...), 1, 2},
 		{append([]byte{0x0}, shifted(6)...), 1, 6},
+		{[]byte{0xa3, 0x14, 0x15, 0x92, 0x15, 0x94, 0x2b, 0xff, 0x31, 0x41, 0x59, 0x26, 0x53, 0x59}, 8, 0},
 	} {
 		byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, tc.buf)
 		if got, want := byteOffset, tc.byteOffset; got != want {
@@ -168,6 +172,43 @@ func TestFindPatterns(t *testing.T) {
 				t.Fatalf("%v: %v: got %v, want %v", i, p, got, want)
 			}
 			if got, want := bitOffset, p%8; got != want {
+				t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
+			}
+		}
+	}
+
+}
+
+func TestFalsePositives(t *testing.T) {
+	Init()
+	// partial patterns
+	partial := [6][]byte{}
+	for i := range partial {
+		partial[i] = make([]byte, i+1)
+		copy(partial[i], bzip2BlockMagic[:i+1])
+	}
+	// zero out the last bit of the complete magic # so that it doesn't
+	// match
+	partial[5][5] = partial[5][5] & 0xf7
+
+	for i, p := range partial {
+		byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, p)
+		if got, want := byteOffset, -1; got != want {
+			t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
+		}
+		if got, want := bitOffset, -1; got != want {
+			t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
+		}
+		tmp := make([]byte, len(p)+6)
+		copy(tmp, p)
+		for shift := 0; shift < 7; shift++ {
+			tmp = bitstreamShift(tmp)
+			copy(tmp[len(tmp)-6:], bzip2BlockMagic[:])
+			byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, tmp)
+			if got, want := byteOffset, len(p); got != want {
+				t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
+			}
+			if got, want := bitOffset, 0; got != want {
 				t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
 			}
 		}

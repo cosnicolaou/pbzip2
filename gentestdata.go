@@ -36,7 +36,9 @@ func main() {
 		{"100KB1", genPredictableRandomData(100 * 1024), []string{"-1"}},
 		{"300KB1", genPredictableRandomData(300 * 1024), []string{"-1"}},
 		{"400KB1", genPredictableRandomData(400 * 1024), []string{"-1"}},
-	} {
+		{"800KB1", genPredictableRandomData(800 * 1024), []string{"-1"}},
+		{"900KB1", genPredictableRandomData(900 * 1024), []string{"-1"}},
+		} {
 		raw, bz2 := tc.name, tc.name+".bz2"
 		os.Remove(raw)
 		os.Remove(bz2)

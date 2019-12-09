@@ -2,6 +2,7 @@ package pbzip2
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -51,6 +52,8 @@ func createBzipFile(name, blockSize string, data []byte) (io.ReadCloser, error) 
 }
 
 func TestScan(t *testing.T) {
+	ctx := context.Background()
+	//	Verbose = true
 	bc := func(c ...uint32) []uint32 {
 		return c
 	}
@@ -87,6 +90,14 @@ func TestScan(t *testing.T) {
 			182711008,
 			bc(984137596, 1527206082, 1102975844, 1428961015, 3572671310),
 			bci(806206, 806273, 806182, 806254, 81086)},
+		{"800KB1", genPredictableRandomData(800 * 1024), "-1",
+			139967838,
+			bc(984137596, 1527206082, 1102975844, 1428961015, 4117679320, 2969657708, 1647728401, 4168645754, 1334625769),
+			bci(806206, 806273, 806182, 806254, 806158, 806323, 806263, 806295, 158358)},
+		{"900KB1", genPredictableRandomData(900 * 1024), "-1",
+			1402104902,
+			bc(984137596, 1527206082, 1102975844, 1428961015, 4117679320, 2969657708, 1647728401, 4168645754, 360300138, 4141343228),
+			bci(806206, 806273, 806182, 806254, 806158, 806323, 806263, 806295, 806166, 177790)},
 	} {
 		rd, err := createBzipFile(tc.name, tc.blockSize, tc.data)
 		if err != nil {
@@ -119,7 +130,7 @@ func TestScan(t *testing.T) {
 			prgerr = err
 			prgwg.Done()
 		}()
-		dc := NewDecompressor(3, prgCh)
+		dc := NewDecompressor(ctx, Concurrency(3), SendUpdates(prgCh))
 
 		pwg.Add(1)
 		go func() {
@@ -129,10 +140,10 @@ func TestScan(t *testing.T) {
 			}
 			pwg.Done()
 		}()
-		for sc.Scan() {
+		for sc.Scan(ctx) {
 			block, bitOffset, blockSize, blockCRC := sc.Block()
 			// Parallel decompress.
-			dc.NewBlock(sc.BlockSize(), block, bitOffset, blockCRC)
+			dc.Decompress(sc.BlockSize(), block, bitOffset, blockCRC)
 			if len(block) == 0 {
 				continue
 			}
@@ -170,7 +181,11 @@ func TestScan(t *testing.T) {
 		if got, want := data, tc.data; !bytes.Equal(got, want) {
 			t.Errorf("%v: got %v..., want %v...", tc.name, firstN(10, got), firstN(10, want))
 		}
-		if got, want := dc.Finish(), tc.streamCRC; got != want {
+		crc, err := dc.Finish()
+		if err != nil {
+			t.Errorf("Finish: %v", err)
+		}
+		if got, want := crc, tc.streamCRC; got != want {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
 		}
 		pwg.Wait()

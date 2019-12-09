@@ -106,6 +106,15 @@ func scanBitStream(first, second map[uint32]uint8, input []byte) (int, int) {
 			pos++
 			continue
 		}
+		/*
+			fmt.Printf("OK: %v in %v\n", pos, shift)
+			cpy := make([]byte, 5)
+			copy(cpy, input[pos:pos+4])
+			for i := 0; i < (8 - int(shift)); i++ {
+				cpy = bitstreamShift(cpy)
+			}
+			fmt.Printf("OK: %v in %v -> %02x\n", pos, shift, cpy[1:4])
+		*/
 		pos += 4
 		var nv uint32
 		switch il - pos {
@@ -125,7 +134,7 @@ func scanBitStream(first, second map[uint32]uint8, input []byte) (int, int) {
 		}
 		s, ok := second[nv]
 		if !ok {
-			pos++
+			pos = rpos + 1
 			continue
 		}
 		if s != shift {

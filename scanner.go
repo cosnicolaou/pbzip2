@@ -6,6 +6,7 @@ package pbzip2
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -13,10 +14,21 @@ import (
 )
 
 type scannerOpts struct {
+	maxPreamble int
 }
 
 // ScannerOption represenst an option to NewBZ2BlockScanner.
 type ScannerOption func(*scannerOpts)
+
+// ScanBlockOverhead sets the size of the overhead, in bytes, that
+// the scanner assumes is sufficient to capture all of the bzip2 per block
+// data structures. It should only ever be needed if the scanner is unable to
+// find a magic number.
+func ScanBlockOverhead(b int) ScannerOption {
+	return func(o *scannerOpts) {
+		o.maxPreamble = b
+	}
+}
 
 // See https://en.wikipedia.org/wiki/Bzip2 for an explanation of the file
 // format.
@@ -60,17 +72,24 @@ type Scanner struct {
 	first, done     bool
 	header, trailer [4]byte
 	blockSize       int
+	maxPreamble     int
 }
 
 // NewScanner returns a new instance of Scanner.
 func NewScanner(rd io.Reader, opts ...ScannerOption) *Scanner {
-	scopts := scannerOpts{}
+	Init()
+	o := scannerOpts{
+		// Allow enough overhead for the bzip block overhead of the coding tables
+		// before the content stats.
+		maxPreamble: 30 * 1024,
+	}
 	for _, fn := range opts {
-		fn(&scopts)
+		fn(&o)
 	}
 	bzs := &Scanner{
-		rd:    rd,
-		first: true,
+		rd:          rd,
+		first:       true,
+		maxPreamble: o.maxPreamble,
 	}
 	return bzs
 }
@@ -103,7 +122,7 @@ func (sc *Scanner) scanHeader() bool {
 		return false
 	}
 	sc.blockSize = 100 * 1000 * int(sc.header[3]-'0')
-	sc.brd = bufio.NewReaderSize(sc.rd, sc.blockSize+2048)
+	sc.brd = bufio.NewReaderSize(sc.rd, sc.blockSize+sc.maxPreamble)
 	return true
 }
 
@@ -120,9 +139,15 @@ func readCRC(block []byte, shift int) uint32 {
 }
 
 // Scan returns true if there a block to be returned.
-func (sc *Scanner) Scan() bool {
+func (sc *Scanner) Scan(ctx context.Context) bool {
 	if sc.err != nil || sc.done {
 		return false
+	}
+	select {
+	case <-ctx.Done():
+		sc.err = ctx.Err()
+		return false
+	default:
 	}
 	if sc.first {
 		if !sc.scanHeader() {
@@ -133,11 +158,9 @@ func (sc *Scanner) Scan() bool {
 		sc.first = false
 	}()
 
-	// read enough data to be sure of capturing the next block, it assumes
-	// that the bzip block header fits into 2K, which it should.
-	// TODO(cos): check maximum size of bzip2 huffman tress, symbols etc.
 	eof := false
-	buf, err := sc.brd.Peek(sc.blockSize + 1024)
+	lookahead := sc.blockSize + sc.maxPreamble
+	buf, err := sc.brd.Peek(lookahead)
 	if err != nil {
 		if err != io.EOF {
 			sc.err = err
@@ -163,7 +186,7 @@ func (sc *Scanner) Scan() bool {
 	byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, buf)
 	if byteOffset == -1 {
 		if !eof {
-			sc.err = fmt.Errorf("failed to find next block within expected max buffer size")
+			sc.err = fmt.Errorf("failed to find next block within expected max buffer size of %v", lookahead)
 			return false
 		}
 		trailer, trailerSize, trailerOffset := findTrailingMagicAndCRC(buf, bzip2EOSMagic[:])
@@ -176,7 +199,10 @@ func (sc *Scanner) Scan() bool {
 		sc.buf = make([]byte, len(buf)-trailerSize)
 		copy(sc.buf, buf[:len(buf)-trailerSize])
 		sc.bufBitOffset = sc.prevBitOffset
-		sc.bufBitSize = (len(sc.buf) * 8) - 8 + trailerOffset
+		sc.bufBitSize = (len(sc.buf) * 8)
+		if trailerOffset > 0 {
+			sc.bufBitSize += -8 + trailerOffset
+		}
 		sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
 		if sc.prevBitOffset > 0 {
 			sc.bufBitSize -= sc.prevBitOffset
