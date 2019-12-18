@@ -13,10 +13,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/cosnicolaou/pbzip2"
 	"github.com/grailbio/base/file"
+	"github.com/grailbio/base/file/s3file"
 	"github.com/grailbio/base/must"
 	"github.com/schollz/progressbar/v2"
+	"golang.org/x/crypto/ssh/terminal"
 	"v.io/x/lib/cmd/flagvar"
 )
 
@@ -24,7 +27,7 @@ var commandline struct {
 	InputFile        string `cmd:"input,,'input file, s3 path, or url'"`
 	Concurrency      int    `cmd:"concurrency,4,'concurrency for the decompression'"`
 	ProgressBar      bool   `cmd:"progress,true,display a progress bar"`
-	OutputFile       string `cmd:"output,,'output file or s3 path, set to - for stdout'"`
+	OutputFile       string `cmd:"output,,'output file or s3 path, omit for stdout'"`
 	MaxBlockOverhead int    `cmd:"max-block-overhead,,'the max size of the per block coding tables'"`
 	Verbose          bool   `cmd:"verbose,false,verbose debug/trace information"`
 }
@@ -34,19 +37,24 @@ func init() {
 		map[string]interface{}{
 			"concurrency": runtime.GOMAXPROCS(-1),
 		}, nil))
+	file.RegisterImplementation("s3", func() file.Implementation {
+		return s3file.NewImplementation(
+			s3file.NewDefaultProvider(session.Options{}), s3file.Options{})
+	})
 }
 
-func progressBar(ctx context.Context, ch chan pbzip2.Progress, size int64) {
+func progressBar(ctx context.Context, progressBarWr io.Writer, ch chan pbzip2.Progress, size int64) {
 	next := uint64(1)
 	bar := progressbar.NewOptions64(size,
 		progressbar.OptionSetBytes64(size),
+		progressbar.OptionSetWriter(progressBarWr),
 		progressbar.OptionSetPredictTime(true))
 	bar.RenderBlank()
 	for {
 		select {
 		case p := <-ch:
 			if p.Block == 0 {
-				fmt.Println()
+				fmt.Fprintf(progressBarWr, "\n")
 				return
 			}
 			bar.Add(p.Compressed)
@@ -97,7 +105,7 @@ func openFileOrURL(ctx context.Context, name string) (io.Reader, int64, func(con
 }
 
 func createFile(ctx context.Context, name string) (io.Writer, func(context.Context) error, error) {
-	if name == "-" {
+	if len(name) == 0 {
 		return os.Stdout,
 			func(context.Context) error {
 				return nil
@@ -138,10 +146,6 @@ func runner() (returnErr error) {
 		return fmt.Errorf("please specify an input file, s3 path or url")
 	}
 
-	if len(commandline.OutputFile) == 0 {
-		return fmt.Errorf("please specify an output file or s3 path")
-	}
-
 	rd, size, readerCleanup, err := openFileOrURL(ctx, commandline.InputFile)
 	if err != nil {
 		return err
@@ -152,6 +156,7 @@ func runner() (returnErr error) {
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		if err := writerCleanup(ctx); err != nil {
 			log.Printf("writer cleanup: %v", err)
@@ -166,13 +171,19 @@ func runner() (returnErr error) {
 	var (
 		progressBarCh chan pbzip2.Progress
 		progressBarWg sync.WaitGroup
+		progressBarWr = os.Stdout
 	)
-	if commandline.ProgressBar && commandline.OutputFile != "-" {
+	showProgressBar := len(commandline.OutputFile) > 0
+	isTTY := terminal.IsTerminal(int(os.Stdout.Fd()))
+	if commandline.ProgressBar && (showProgressBar || !isTTY) {
 		progressBarCh = make(chan pbzip2.Progress, commandline.Concurrency)
 		progressBarWg.Add(1)
 		bzOpts = append(bzOpts, pbzip2.BZSendUpdates(progressBarCh))
+		if !isTTY {
+			progressBarWr = os.Stderr
+		}
 		go func() {
-			progressBar(ctx, progressBarCh, size)
+			progressBar(ctx, progressBarWr, progressBarCh, size)
 			progressBarWg.Done()
 		}()
 	}
