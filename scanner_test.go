@@ -133,7 +133,7 @@ func TestScan(t *testing.T) {
 			prgerr = err
 			prgwg.Done()
 		}()
-		dc := NewDecompressor(ctx, Concurrency(3), SendUpdates(prgCh))
+		dc := NewDecompressor(ctx, BZConcurrency(3), BZSendUpdates(prgCh))
 
 		pwg.Add(1)
 		go func() {
