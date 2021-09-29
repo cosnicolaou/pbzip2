@@ -138,7 +138,7 @@ func readCRC(block []byte, shift int) uint32 {
 	return binary.BigEndian.Uint32(tmp[1:5])
 }
 
-// Scan returns true if there a block to be returned.
+// Scan returns true if there is a block to be returned.
 func (sc *Scanner) Scan(ctx context.Context) bool {
 	if sc.err != nil || sc.done {
 		return false
@@ -179,6 +179,11 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 			buf = buf[len(bzip2BlockMagic):]
 			sc.bufBitOffset = 0
 			sc.prevBitOffset = 0
+		}
+		if bytes.HasPrefix(buf, bzip2EOSMagic[:]) {
+			// Handle the 'empty file/stream' case since for that
+			// there os only an EOS block.
+			return false
 		}
 	}
 
@@ -223,7 +228,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	return true
 }
 
-// Header returns the stream header. It can onlybe called after Scan has been
+// Header returns the stream header. It can only be called after Scan has been
 // called at least once successfully.
 func (sc *Scanner) Header() []byte {
 	if sc.first {

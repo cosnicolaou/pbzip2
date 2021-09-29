@@ -5,6 +5,7 @@ package pbzip2
 
 import (
 	"bytes"
+	gobzip2 "compress/bzip2"
 	"context"
 	"fmt"
 	"io"
@@ -102,7 +103,8 @@ func TestScan(t *testing.T) {
 			bc(984137596, 1527206082, 1102975844, 1428961015, 4117679320, 2969657708, 1647728401, 4168645754, 360300138, 4141343228),
 			bci(806206, 806273, 806182, 806254, 806158, 806323, 806263, 806295, 806166, 177790)},
 	} {
-		rd, err := createBzipFile(tc.name, tc.blockSize, tc.data)
+		filename := filepath.Join(tmpdir, tc.name)
+		rd, err := createBzipFile(filename, tc.blockSize, tc.data)
 		if err != nil {
 			t.Fatalf("createBzipFile: %v", err)
 		}
@@ -119,30 +121,30 @@ func TestScan(t *testing.T) {
 			prgerr error
 		)
 		prgwg.Add(1)
-		go func() {
+		go func(n string) {
 			next := uint64(1)
 			var err error
 			for p := range prgCh {
 				fmt.Printf("%#v\n", p)
 				if p.Block != next {
-					err = fmt.Errorf("out of sequence block %#v\n", p)
+					err = fmt.Errorf("%v: out of sequence block %#v\n", n, p)
 					break
 				}
 				next++
 			}
 			prgerr = err
 			prgwg.Done()
-		}()
+		}(tc.name)
 		dc := NewDecompressor(ctx, BZConcurrency(3), BZSendUpdates(prgCh))
 
 		pwg.Add(1)
-		go func() {
+		go func(n string) {
 			pbuf, err = ioutil.ReadAll(dc)
 			if err != nil {
-				t.Errorf("failed to read all from parallel decompressor: %v", err)
+				t.Errorf("%v: failed to read all from parallel decompressor: %v", n, err)
 			}
 			pwg.Done()
-		}()
+		}(tc.name)
 		for sc.Scan(ctx) {
 			block, bitOffset, blockSize, blockCRC := sc.Block()
 			// Parallel decompress.
@@ -184,6 +186,23 @@ func TestScan(t *testing.T) {
 		if got, want := data, tc.data; !bytes.Equal(got, want) {
 			t.Errorf("%v: got %v..., want %v...", tc.name, firstN(10, got), firstN(10, want))
 		}
+
+		{
+			// Test against stdlib bzip2.
+			f, err := os.Open(filename + ".bz2")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bdc := gobzip2.NewReader(f)
+			buf, err := ioutil.ReadAll(bdc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := data, buf; !bytes.Equal(got, want) {
+				t.Errorf("%v: got %v..., want %v...", tc.name, firstN(10, got), firstN(10, want))
+			}
+		}
+
 		crc, err := dc.Finish()
 		if err != nil {
 			t.Errorf("Finish: %v", err)
