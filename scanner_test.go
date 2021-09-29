@@ -224,3 +224,15 @@ func TestScan(t *testing.T) {
 		}
 	}
 }
+
+func TestEmpty(t *testing.T) {
+	br := bzip2.NewBlockReader(1024, nil, 0)
+	buf := make([]byte, 1024)
+	n, err := br.Read(buf)
+	if got, want := err, io.EOF; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := n, 0; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
