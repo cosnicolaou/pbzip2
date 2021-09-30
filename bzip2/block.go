@@ -35,7 +35,7 @@ func (br *BlockReader) Read(buf []byte) (n int, err error) {
 	}
 	if br.first {
 		// skip to the start of the block.
-		br.underlying.br.ReadBits(uint(br.start))
+		br.underlying.br.ReadBits(br.start)
 		// We know we're at the start of a block.
 		if err := br.underlying.readBlock(); err != nil {
 			return 0, err

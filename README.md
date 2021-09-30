@@ -1,3 +1,4 @@
+[![CircleCI](https://circleci.com/gh/cosnicolaou/pbzip2.svg?style=svg)](https://circleci.com/gh/cosnicolaou/pbzip2)
 # pbzip2
 
 This package provides parallel and streaming decompression of bzip2 files. It

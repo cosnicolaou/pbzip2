@@ -10,7 +10,7 @@ import (
 )
 
 // NOTE: bzip2 bitstreams are created by packing 8 bits into a byte with
-//       the most signifiant bit being the first bit, that is, it the bitstream
+//       the most significant bit being the first bit, that is, it the bitstream
 //       can be visualized as flowing from left to right.
 
 // bitstreamShift shifts the contents of a  byte slice, with carry, one position
@@ -83,7 +83,7 @@ func allShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 			first[0] = (first[0] & mask) | (byte(j) << (8 - shift))
 			firstWordMap[binary.LittleEndian.Uint32(first[:4])] = shift
 		}
-		to = to << 1
+		to <<= 1
 	}
 	return
 }
@@ -117,14 +117,11 @@ func scanBitStream(first, second map[uint32]uint8, input []byte) (int, int) {
 		case 2:
 			tmp := []byte{input[pos], input[pos+1], 0x0, 0x0}
 			nv = binary.LittleEndian.Uint32(tmp)
-			pos += 2
 		case 3:
 			tmp := []byte{input[pos], input[pos+1], input[pos+2], 0x0}
 			nv = binary.LittleEndian.Uint32(tmp)
-			pos += 3
 		default:
 			nv = binary.LittleEndian.Uint32(input[pos : pos+4])
-			pos += 4
 		}
 		s, ok := second[nv]
 		if !ok {

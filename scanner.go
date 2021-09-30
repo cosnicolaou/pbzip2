@@ -55,7 +55,7 @@ func Init() {
 // with the cavaet that it does not detect non-byte aligned magic number
 // sequences (bzip blocks are not byte aligned) and consequently it may
 // return multiple blocks in a single scan. This is the 'quick-and-dirty'
-// aspect! However, for large files it should be able to find sufficent
+// aspect! However, for large files it should be able to find sufficient
 // numbers of such runs to benefit fro concurrency.
 // The first block discovered will be the stream header and this
 // is validated and consumed. The last block will be the stream trailer
@@ -103,7 +103,7 @@ func (sc *Scanner) scanHeader() bool {
 	//                           (uncompressed)
 	n, err := sc.rd.Read(sc.header[:])
 	if err != nil {
-		sc.err = fmt.Errorf("failed to read stream header: %v\n", err)
+		sc.err = fmt.Errorf("failed to read stream header: %v", err)
 	}
 	if n != 4 {
 		sc.err = fmt.Errorf("stream header is too small: %v", n)
@@ -179,8 +179,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 			buf = buf[len(bzip2BlockMagic):]
 			sc.bufBitOffset = 0
 			sc.prevBitOffset = 0
-		}
-		if bytes.HasPrefix(buf, bzip2EOSMagic[:]) {
+		} else if bytes.HasPrefix(buf, bzip2EOSMagic[:]) {
 			// Handle the 'empty file/stream' case since for that
 			// there os only an EOS block.
 			return false
@@ -194,25 +193,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 			sc.err = fmt.Errorf("failed to find next block within expected max buffer size of %v", lookahead)
 			return false
 		}
-		trailer, trailerSize, trailerOffset := findTrailingMagicAndCRC(buf, bzip2EOSMagic[:])
-		if trailerSize == -1 {
-			sc.err = fmt.Errorf("failed to find trailer")
-			return false
-		}
-		copy(sc.trailer[:], trailer)
-		sc.done = true
-		sc.buf = make([]byte, len(buf)-trailerSize)
-		copy(sc.buf, buf[:len(buf)-trailerSize])
-		sc.bufBitOffset = sc.prevBitOffset
-		sc.bufBitSize = (len(sc.buf) * 8)
-		if trailerOffset > 0 {
-			sc.bufBitSize += -8 + trailerOffset
-		}
-		sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
-		if sc.prevBitOffset > 0 {
-			sc.bufBitSize -= sc.prevBitOffset
-		}
-		return true
+		return sc.handleEOF(buf)
 	}
 	sc.buf = make([]byte, byteOffset+1)
 	copy(sc.buf, buf[:byteOffset+1])
@@ -225,6 +206,28 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	sc.prevBitOffset = bitOffset
 	// skip the magic # before starting the search for the next magic #.
 	sc.brd.Discard(byteOffset + len(bzip2BlockMagic))
+	return true
+}
+
+func (sc *Scanner) handleEOF(buf []byte) bool {
+	trailer, trailerSize, trailerOffset := findTrailingMagicAndCRC(buf, bzip2EOSMagic[:])
+	if trailerSize == -1 {
+		sc.err = fmt.Errorf("failed to find trailer")
+		return false
+	}
+	copy(sc.trailer[:], trailer)
+	sc.done = true
+	sc.buf = make([]byte, len(buf)-trailerSize)
+	copy(sc.buf, buf[:len(buf)-trailerSize])
+	sc.bufBitOffset = sc.prevBitOffset
+	sc.bufBitSize = (len(sc.buf) * 8)
+	if trailerOffset > 0 {
+		sc.bufBitSize += -8 + trailerOffset
+	}
+	sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
+	if sc.prevBitOffset > 0 {
+		sc.bufBitSize -= sc.prevBitOffset
+	}
 	return true
 }
 

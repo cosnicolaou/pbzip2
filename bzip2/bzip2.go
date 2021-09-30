@@ -190,6 +190,7 @@ func (bz2 *reader) readFromBlock(buf []byte) int {
 	return n
 }
 
+//nolint:gocyclo
 func (bz2 *reader) read(buf []byte) (int, error) {
 	for {
 		n := bz2.readFromBlock(buf)
@@ -279,6 +280,7 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 }
 
 // readBlock reads a bzip2 block. The magic number should already have been consumed.
+//nolint:gocyclo
 func (bz2 *reader) readBlock() (err error) {
 	br := &bz2.br
 	bz2.wantBlockCRC = uint32(br.ReadBits64(32)) // skip checksum. TODO: check it if we can figure out what it is.
