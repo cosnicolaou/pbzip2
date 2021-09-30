@@ -26,7 +26,7 @@ import (
 	"v.io/x/lib/cmd/flagvar"
 )
 
-var commandline struct {
+type commandlineFlags struct {
 	InputFile        string `cmd:"input,,'input file, s3 path, or url'"`
 	Concurrency      int    `cmd:"concurrency,4,'concurrency for the decompression'"`
 	ProgressBar      bool   `cmd:"progress,true,display a progress bar"`
@@ -34,6 +34,8 @@ var commandline struct {
 	MaxBlockOverhead int    `cmd:"max-block-overhead,,'the max size of the per block coding tables'"`
 	Verbose          bool   `cmd:"verbose,false,verbose debug/trace information"`
 }
+
+var commandline commandlineFlags
 
 func init() {
 	must.Nil(flagvar.RegisterFlagsInStruct(flag.CommandLine, "cmd", &commandline,
@@ -129,22 +131,46 @@ func main() {
 	}
 }
 
-func runner() (returnErr error) {
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
-	OnSignal(cancel, os.Interrupt)
+func handleOutput(wr io.Writer, dc *pbzip2.Decompressor, errCh chan<- error) {
+	defer close(errCh)
+	_, err := io.Copy(wr, dc.Reader())
+	if err != nil && err != io.EOF {
+		errCh <- err
+		return
+	}
+	errCh <- nil
+}
 
-	bzOpts := []pbzip2.DecompressorOption{
+func optsFromFlags(cl commandlineFlags) (
+	bzOpts []pbzip2.DecompressorOption,
+	scanOpts []pbzip2.ScannerOption,
+	progressBarCh chan pbzip2.Progress,
+	isTTY bool) {
+	bzOpts = []pbzip2.DecompressorOption{
 		pbzip2.BZConcurrency(commandline.Concurrency),
 		pbzip2.BZVerbose(commandline.Verbose),
 	}
-	scanOpts := []pbzip2.ScannerOption{}
+	scanOpts = []pbzip2.ScannerOption{}
 
 	if commandline.MaxBlockOverhead > 0 {
 		scanOpts = append(scanOpts,
 			pbzip2.ScanBlockOverhead(commandline.MaxBlockOverhead))
 	}
+	isTTY = terminal.IsTerminal(int(os.Stdout.Fd()))
+	if commandline.ProgressBar && (len(commandline.OutputFile) > 0 || !isTTY) {
+		ch := make(chan pbzip2.Progress, commandline.Concurrency)
+		bzOpts = append(bzOpts, pbzip2.BZSendUpdates(ch))
+		progressBarCh = ch
+	}
+	return
+}
 
+func runner() (returnErr error) {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	OnSignal(cancel, os.Interrupt)
+
+	bzOpts, scanOpts, progressBarCh, isTTY := optsFromFlags(commandline)
 	if len(commandline.InputFile) == 0 {
 		return fmt.Errorf("please specify an input file, s3 path or url")
 	}
@@ -172,16 +198,12 @@ func runner() (returnErr error) {
 	// Kick off the progress bar, if requested and the output is not
 	// being written to stdout.
 	var (
-		progressBarCh chan pbzip2.Progress
 		progressBarWg sync.WaitGroup
 		progressBarWr = os.Stdout
 	)
-	showProgressBar := len(commandline.OutputFile) > 0
-	isTTY := terminal.IsTerminal(int(os.Stdout.Fd()))
-	if commandline.ProgressBar && (showProgressBar || !isTTY) {
-		progressBarCh = make(chan pbzip2.Progress, commandline.Concurrency)
+
+	if progressBarCh != nil {
 		progressBarWg.Add(1)
-		bzOpts = append(bzOpts, pbzip2.BZSendUpdates(progressBarCh))
 		if !isTTY {
 			progressBarWr = os.Stderr
 		}
@@ -197,15 +219,7 @@ func runner() (returnErr error) {
 	// Kick off the output routine.
 	errCh := make(chan error, 1)
 
-	go func() {
-		defer close(errCh)
-		_, err := io.Copy(wr, dc.Reader())
-		if err != nil && err != io.EOF {
-			errCh <- err
-			return
-		}
-		errCh <- nil
-	}()
+	go handleOutput(wr, dc, errCh)
 
 	bn := 0
 	for sc.Scan(ctx) {
@@ -219,7 +233,6 @@ func runner() (returnErr error) {
 	if err := sc.Err(); err != nil {
 		return fmt.Errorf("scanner: %v", err)
 	}
-
 	crc, err := dc.Finish()
 	if err != nil {
 		return fmt.Errorf("decompressor: %v", err)

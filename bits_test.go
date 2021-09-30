@@ -29,9 +29,10 @@ func TestBitstreamShift(t *testing.T) {
 		{b(0b00000000, 0b00110001, 0b10011010, 0b11001010, 0b11111111, 0b11111111),
 			b(0b00000000, 0b00011000, 0b11001101, 0b01100101, 0b01111111, 0b11111111)},
 	} {
-		if got, want := bitstreamShift(tc.i), tc.o; !bytes.Equal(got[:], want[:]) {
+		if got, want := bitstreamShift(tc.i), tc.o; !bytes.Equal(got, want) {
+			t.Logf("got: %v", prbits(got))
+			t.Logf("want: %v", prbits(want))
 			t.Errorf("%v: got %08b, want %08b", i, got, want)
-
 		}
 	}
 }
@@ -70,7 +71,7 @@ func TestBitPatterns(t *testing.T) {
 		binary.LittleEndian.PutUint32(bits[:], p)
 		expanded := mapToBytes(bits[:])
 		// 32-s truncats the magic number to the 4 byte boundary.
-		pos := bytes.Index(expanded[:], magic[:32-s])
+		pos := bytes.Index(expanded, magic[:32-s])
 		if got, want := pos, s; got != int(want) {
 			t.Errorf("got %v, want %v\n", got, want)
 		}
@@ -88,8 +89,8 @@ func TestBitPatterns(t *testing.T) {
 		expanded := mapToBytes(bits[:])
 		from := 8 - s       // the number of bits remaining after the shift
 		to := from + 16 + s // the total size of the prefix, plus the shift offset
-		pos := bytes.Index(expanded[:], magic[from:to])
-		if got, want := pos, 0; got != int(want) {
+		pos := bytes.Index(expanded, magic[from:to])
+		if got, want := pos, 0; got != want {
 			t.Errorf("got %v, want %v\n", got, want)
 			t.FailNow()
 		}
@@ -112,7 +113,6 @@ func insertMagic(buf, magic []byte, p int) []byte {
 		tail = bitstreamShift(tail)
 	}
 	copy(buf[bytePos:], tail)
-	//	fmt.Printf("BP: %v -> %v .. %v %08b .. %08b\n", p, bytePos, bitPos, (uint8(0xff) << (8 - bitPos)), (0xff >> bitPos))
 	buf[bytePos] = save&(uint8(0xff)<<(8-bitPos)) | (buf[bytePos] & (0xff >> bitPos))
 	return buf
 }
@@ -192,7 +192,7 @@ func TestFalsePositives(t *testing.T) {
 	}
 	// zero out the last bit of the complete magic # so that it doesn't
 	// match
-	partial[5][5] = partial[5][5] & 0xf7
+	partial[5][5] &= 0xf7
 
 	for i, p := range partial {
 		byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, p)
