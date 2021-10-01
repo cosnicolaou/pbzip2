@@ -192,8 +192,8 @@ func TestReaderErrors(t *testing.T) {
 		t.Errorf("expected an error or different error to the one received: %v", err)
 	}
 
-	readFile := func() ([]byte, int) {
-		buf, err := os.ReadFile(bzip2Files["hello"] + ".bz2")
+	readFile := func(name string) ([]byte, int) {
+		buf, err := os.ReadFile(bzip2Files[name] + ".bz2")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,26 +218,33 @@ func TestReaderErrors(t *testing.T) {
 
 	testError([]byte{0x1, 0x1, 0x1}, "stream header is too small")
 
-	buf, l := readFile()
+	buf, l := readFile("hello")
 	buf[l] = 0x1
 	buf[l-1] = 0x1
 	testError(buf, "mismatched CRCs")
 
-	buf, l = readFile()
+	buf, l = readFile("hello")
 	buf[l-4] = 0x1
 	testError(buf, "failed to find trailer")
 
-	buf, _ = readFile()
+	buf, _ = readFile("hello")
 	buf[0] = 0x1
 	testError(buf, "wrong file magic: 015a")
 
-	buf, _ = readFile()
+	buf, _ = readFile("hello")
 	buf[2] = 0x1
 	testError(buf, "wrong version")
 
-	buf, _ = readFile()
+	buf, _ = readFile("hello")
 	buf[3] = 0x1
 	testError(buf, "bad block size")
+
+	buf, _ = readFile("300KB1")
+	corrupted := buf[:9000]
+	corrupted = append(corrupted, pbzip2.BlockMagic()...)
+	corrupted = append(corrupted, buf[9000:]...)
+	testError(buf, "bzip2 data invalid: data exceeds block size")
+
 }
 
 type errorReader struct{}

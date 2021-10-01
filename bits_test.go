@@ -16,8 +16,12 @@ import (
 
 func GetNumDecompressionGoRoutines() int64 {
 	return atomic.LoadInt64(&numDecompressionGoRoutines)
-
 }
+
+func BlockMagic() []byte {
+	return bzip2BlockMagic[:]
+}
+
 func TestBitstreamShift(t *testing.T) {
 	b := func(b ...byte) []byte {
 		return b

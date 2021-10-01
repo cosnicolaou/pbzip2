@@ -239,12 +239,14 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 			dc.trace("assemble: %v", block)
 			if block != nil {
 				heap.Push(dc.heap, block)
+				fmt.Printf("Assemble: New: %v: %v\n", block.order, block.err)
 			}
 			for len(*dc.heap) > 0 {
 				min := (*dc.heap)[0]
 				if min.order != expected {
 					break
 				}
+				fmt.Printf("Assemble: Min: %v: %v\n", min.order, min.err)
 				if err := min.err; err != nil {
 					dc.pwr.CloseWithError(err)
 					return
