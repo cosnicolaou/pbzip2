@@ -133,6 +133,9 @@ func (rd *reader) Read(buf []byte) (int, error) {
 	// such as a CRC error.
 	select {
 	case cerr := <-rd.errCh:
+		if err != io.EOF {
+			return n, err
+		}
 		if cerr != nil {
 			return n, cerr
 		}
