@@ -48,15 +48,12 @@ func Init() {
 	})
 }
 
-// Scanner is a quick-and-dirty implementation of a scanner that
-// returns runs of entire bz2 blocks. It works by splitting the input into
-// blocks terminated by either the bz2 block magic or bz2 end of stream
-// magic number sequences as documented in https://en.wikipedia.org/wiki/Bzip2
-// with the cavaet that it does not detect non-byte aligned magic number
-// sequences (bzip blocks are not byte aligned) and consequently it may
-// return multiple blocks in a single scan. This is the 'quick-and-dirty'
-// aspect! However, for large files it should be able to find sufficient
-// numbers of such runs to benefit fro concurrency.
+// Scanner returns runs of entire bz2 blocks. It works by splitting the input
+// into blocks terminated by either the bz2 block magic or bz2 end of stream
+// magic number sequences as documented in https://en.wikipedia.org/wiki/Bzip2.
+// The scanner splits the magicc numbers into multiple lookup tables that
+// include all possible shifted values to allow for efficient matching
+// if bit (not byte) aligned values.
 // The first block discovered will be the stream header and this
 // is validated and consumed. The last block will be the stream trailer
 // and this is also consumed and validated internally.

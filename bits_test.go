@@ -16,8 +16,12 @@ import (
 
 func GetNumDecompressionGoRoutines() int64 {
 	return atomic.LoadInt64(&numDecompressionGoRoutines)
-
 }
+
+func BlockMagic() []byte {
+	return bzip2BlockMagic[:]
+}
+
 func TestBitstreamShift(t *testing.T) {
 	b := func(b ...byte) []byte {
 		return b
@@ -187,7 +191,7 @@ func TestFindPatterns(t *testing.T) {
 
 }
 
-func TestFalsePositives(t *testing.T) {
+func TestPartialFalsePositives(t *testing.T) {
 	Init()
 	// partial patterns
 	partial := [6][]byte{}
