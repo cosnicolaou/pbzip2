@@ -36,11 +36,10 @@ func DecompressionOptions(opts ...DecompressorOption) ReaderOption {
 }
 
 type reader struct {
-	ctx    context.Context
-	cancel func()
-	errCh  chan error
-	wg     *sync.WaitGroup
-	dc     *Decompressor
+	ctx   context.Context
+	errCh chan error
+	wg    *sync.WaitGroup
+	dc    *Decompressor
 }
 
 // NewReader returns an io.Reader that uses a scanner and decompressor to decompress
@@ -50,9 +49,6 @@ func NewReader(ctx context.Context, rd io.Reader, opts ...ReaderOption) io.Reade
 	for _, fn := range opts {
 		fn(rdOpts)
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	// cancel must be called on final exit, which is when Read returns
-	// a non-nil error (including io.EOF).
 	sc := NewScanner(rd, rdOpts.scanOpts...)
 	dc := NewDecompressor(ctx, rdOpts.decOpts...)
 
@@ -65,11 +61,11 @@ func NewReader(ctx context.Context, rd io.Reader, opts ...ReaderOption) io.Reade
 		wg.Done()
 	}()
 	return &reader{
-		ctx:    ctx,
-		cancel: cancel,
-		errCh:  errCh,
-		dc:     dc,
-		wg:     wg,
+		ctx: ctx,
+		//cancel: cancel,
+		errCh: errCh,
+		dc:    dc,
+		wg:    wg,
 	}
 }
 
@@ -126,7 +122,6 @@ func (rd *reader) Read(buf []byte) (int, error) {
 	if err := rd.handleErrorOrCancel(); err != nil {
 		rd.dc.Cancel(err)
 		rd.wg.Wait() // wait for internal goroutine to finish.
-		rd.cancel()  // must always be called on final return
 		return 0, err
 	}
 	n, err := rd.dc.Read(buf)
@@ -134,7 +129,6 @@ func (rd *reader) Read(buf []byte) (int, error) {
 		return n, nil
 	}
 	rd.wg.Wait() // wait for internal goroutine to finish.
-	//rd.cancel()  // must always be called on final return
 	// make sure to catch errors sent after the decompressor is done
 	// such as a CRC error.
 	select {
@@ -144,6 +138,5 @@ func (rd *reader) Read(buf []byte) (int, error) {
 		}
 	default:
 	}
-	rd.cancel() // must always be called on final return
 	return n, err
 }

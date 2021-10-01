@@ -214,15 +214,15 @@ func TestReaderErrors(t *testing.T) {
 	buf[l-4] = 0x1
 	testError(buf, "failed to find trailer")
 
-	buf, l = readFile()
+	buf, _ = readFile()
 	buf[0] = 0x1
 	testError(buf, "wrong file magic: 015a")
 
-	buf, l = readFile()
+	buf, _ = readFile()
 	buf[2] = 0x1
 	testError(buf, "wrong version")
 
-	buf, l = readFile()
+	buf, _ = readFile()
 	buf[3] = 0x1
 	testError(buf, "bad block size")
 }
