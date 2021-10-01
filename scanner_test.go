@@ -130,6 +130,8 @@ func bci(c ...int) []int {
 
 func TestScan(t *testing.T) {
 	ctx := context.Background()
+	// Note that gentestdata.go was used to generate the test cases below
+	// using bzip2's stats feature.
 	for _, tc := range []struct {
 		name       string
 		streamCRC  uint32

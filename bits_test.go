@@ -182,7 +182,7 @@ func TestFindPatterns(t *testing.T) {
 
 }
 
-func TestFalsePositives(t *testing.T) {
+func TestPartialFalsePositives(t *testing.T) {
 	Init()
 	// partial patterns
 	partial := [6][]byte{}
