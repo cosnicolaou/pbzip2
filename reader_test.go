@@ -2,21 +2,33 @@
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
 
-package pbzip2
+package pbzip2_test
 
 import (
 	"bytes"
+	"compress/bzip2"
 	"context"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 
+	"github.com/cosnicolaou/pbzip2"
 	"github.com/cosnicolaou/pbzip2/internal"
 )
+
+func ExampleReader() {
+	input, err := os.Open(filepath.Join("testdata", "hello_world.bz2"))
+	if err != nil {
+		panic(err)
+	}
+	io.Copy(os.Stdout, bzip2.NewReader(input))
+	// Output:
+	// hello world
+}
 
 // readAllSample is like os.ReadAll except that it samples the number of
 // goroutines that are currently being used for decompression.
@@ -29,7 +41,7 @@ func readAllSample(r io.Reader) ([]byte, int64, error) {
 			b = append(b, 0)[:len(b)]
 		}
 		n, err := r.Read(b[len(b):cap(b)])
-		tmp := atomic.LoadInt64(&numDecompressionGoRoutines)
+		tmp := pbzip2.GetNumDecompressionGoRoutines()
 		if tmp > max {
 			max = tmp
 		}
@@ -56,7 +68,7 @@ func validateGoRoutines(t *testing.T, start, stop, max int64) {
 
 func TestIOReader(t *testing.T) {
 	var maxDecGoroutines int64
-	ngs := atomic.LoadInt64(&numDecompressionGoRoutines)
+	ngs := pbzip2.GetNumDecompressionGoRoutines()
 
 	testIOReader(t, func(rd io.Reader) ([]byte, error) {
 		n, max, err := readAllSample(rd)
@@ -66,7 +78,7 @@ func TestIOReader(t *testing.T) {
 
 	validateGoRoutines(t,
 		ngs,
-		atomic.LoadInt64(&numDecompressionGoRoutines),
+		pbzip2.GetNumDecompressionGoRoutines(),
 		maxDecGoroutines)
 }
 
@@ -79,7 +91,8 @@ func testIOReader(t *testing.T, readAll func(io.Reader) ([]byte, error)) {
 
 		for _, concurrency := range []int{1, 2, runtime.GOMAXPROCS(-1)} {
 			rd := openBzipFile(t, filename)
-			drd := NewReader(ctx, rd, DecompressionOptions(BZConcurrency(concurrency)))
+			drd := pbzip2.NewReader(ctx, rd,
+				pbzip2.DecompressionOptions(pbzip2.BZConcurrency(concurrency)))
 			data, err := readAll(drd)
 			if err != nil {
 				t.Errorf("%v: readAll failed: %v", name, err)
@@ -110,7 +123,7 @@ func readAllSampleAndCancel(cancel func(), when int, r io.Reader) ([]byte, int64
 			b = append(b, 0)[:len(b)]
 		}
 		n, err := r.Read(b[len(b):cap(b)])
-		tmp := atomic.LoadInt64(&numDecompressionGoRoutines)
+		tmp := pbzip2.GetNumDecompressionGoRoutines()
 		if tmp > max {
 			max = tmp
 		}
@@ -133,22 +146,22 @@ func TestCancelation(t *testing.T) {
 
 	filename := bzip2Files["1033KB4_Random"]
 
-	ngs := atomic.LoadInt64(&numDecompressionGoRoutines)
+	ngs := pbzip2.GetNumDecompressionGoRoutines()
 
 	// Test with different levels of concurrency.
 	for _, concurrency := range []int{1, 2, runtime.GOMAXPROCS(-1)} {
-		dcOpts := DecompressionOptions(BZConcurrency(concurrency))
+		dcOpts := pbzip2.DecompressionOptions(pbzip2.BZConcurrency(concurrency))
 
 		for i := range []int{1, 77, 100} {
 			rd := openBzipFile(t, filename)
 			ctx, cancel := context.WithCancel(ctx)
-			drd := NewReader(ctx, rd, dcOpts)
+			drd := pbzip2.NewReader(ctx, rd, dcOpts)
 
 			_, max, err := readAllSampleAndCancel(cancel, i, drd)
 
 			validateGoRoutines(t,
 				ngs,
-				atomic.LoadInt64(&numDecompressionGoRoutines),
+				pbzip2.GetNumDecompressionGoRoutines(),
 				max)
 
 			if err == nil || err.Error() != "context canceled" {
@@ -161,7 +174,7 @@ func TestCancelation(t *testing.T) {
 	// Test immediate cancelation.
 	rd := openBzipFile(t, filename)
 	ctx, cancel := context.WithCancel(ctx)
-	drd := NewReader(ctx, rd)
+	drd := pbzip2.NewReader(ctx, rd)
 	cancel()
 	_, err := io.ReadAll(drd)
 	if err == nil || err.Error() != "context canceled" {
@@ -173,7 +186,7 @@ func TestCancelation(t *testing.T) {
 func TestReaderErrors(t *testing.T) {
 	ctx := context.Background()
 	rd := bytes.NewBuffer(nil)
-	drd := NewReader(ctx, rd)
+	drd := pbzip2.NewReader(ctx, rd)
 	_, err := io.ReadAll(drd)
 	if err == nil || err.Error() != "failed to read stream header: EOF" {
 		t.Errorf("expected an error or different error to the one received: %v", err)
@@ -189,7 +202,7 @@ func TestReaderErrors(t *testing.T) {
 
 	testError := func(buf []byte, msg string) {
 		rd := bytes.NewBuffer(buf)
-		drd := NewReader(ctx, rd)
+		drd := pbzip2.NewReader(ctx, rd)
 		_, err = io.ReadAll(drd)
 		if err == nil || !strings.Contains(err.Error(), msg) {
 			_, _, line, _ := runtime.Caller(1)
@@ -197,7 +210,7 @@ func TestReaderErrors(t *testing.T) {
 		}
 	}
 
-	drd = NewReader(ctx, &errorReader{})
+	drd = pbzip2.NewReader(ctx, &errorReader{})
 	_, err = io.ReadAll(drd)
 	if err == nil || !strings.Contains(err.Error(), "failed to read stream header: oops") {
 		t.Errorf("expected an error or different error to the one received: %v", err)
