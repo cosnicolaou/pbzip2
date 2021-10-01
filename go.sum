@@ -13,6 +13,7 @@ cloudeng.io/cmdutil v0.0.0-20210810234338-761e51ad96c2/go.mod h1:EwLVTEiRF+bZPVX
 cloudeng.io/errors v0.0.5/go.mod h1:4iZnGEBj5F3SqTHZF6AHiFMgeHeJWJJkVHx/UwbDYok=
 cloudeng.io/errors v0.0.6 h1:4YRdxFk260BVH2tgFAY5oe2nKWAN0VXbFWlqOqSikUk=
 cloudeng.io/errors v0.0.6/go.mod h1:4iZnGEBj5F3SqTHZF6AHiFMgeHeJWJJkVHx/UwbDYok=
+cloudeng.io/text v0.0.8 h1:zJkm29A0G6Q9KRshiqQQArQ2X3P+X9G7AnNiMaCgRB0=
 cloudeng.io/text v0.0.8/go.mod h1:VPOCvDDUBocQe7rfQDZcyEpScLooZo/6cJs1cM0LOMI=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
