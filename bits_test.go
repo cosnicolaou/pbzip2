@@ -9,10 +9,15 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
+func GetNumDecompressionGoRoutines() int64 {
+	return atomic.LoadInt64(&numDecompressionGoRoutines)
+
+}
 func TestBitstreamShift(t *testing.T) {
 	b := func(b ...byte) []byte {
 		return b

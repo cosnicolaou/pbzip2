@@ -1,7 +1,7 @@
 // Copyright 2020 Cosmos Nicolaou. All rights reserved.
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
-package pbzip2
+package pbzip2_test
 
 import (
 	"bytes"
@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cosnicolaou/pbzip2"
 	"github.com/cosnicolaou/pbzip2/bzip2"
 	"github.com/cosnicolaou/pbzip2/internal"
 )
@@ -85,7 +86,7 @@ func openBzipFile(t *testing.T, filename string) io.ReadCloser {
 	return rd
 }
 
-func progress(n string, prgCh chan Progress) error {
+func progress(n string, prgCh chan pbzip2.Progress) error {
 	next := uint64(1)
 	for p := range prgCh {
 		fmt.Printf("%#v\n", p)
@@ -109,7 +110,7 @@ func stdlibBzip2(filename string) ([]byte, error) {
 	return buf, nil
 }
 
-func synchronousBlockBzip2(t *testing.T, sc *Scanner, name string, existing []byte) []byte {
+func synchronousBlockBzip2(t *testing.T, sc *pbzip2.Scanner, name string, existing []byte) []byte {
 	block, bitOffset, _, _ := sc.Block()
 	rd := bzip2.NewBlockReader(sc.BlockSize(), block, bitOffset)
 	buf, err := ioutil.ReadAll(rd)
@@ -163,13 +164,13 @@ func TestScan(t *testing.T) {
 		defer rd.Close()
 
 		var (
-			sc     = NewScanner(rd)
+			sc     = pbzip2.NewScanner(rd)
 			data   []byte
 			n      int
 			pwg    sync.WaitGroup
 			pbuf   []byte
 			perr   error
-			prgCh  = make(chan Progress, 3)
+			prgCh  = make(chan pbzip2.Progress, 3)
 			prgwg  sync.WaitGroup
 			prgerr error
 			crcs   []uint32
@@ -182,7 +183,9 @@ func TestScan(t *testing.T) {
 			prgwg.Done()
 		}(tc.name)
 
-		dc := NewDecompressor(ctx, BZConcurrency(3), BZSendUpdates(prgCh))
+		dc := pbzip2.NewDecompressor(ctx,
+			pbzip2.BZConcurrency(3),
+			pbzip2.BZSendUpdates(prgCh))
 
 		pwg.Add(1)
 		go func(n string) {
