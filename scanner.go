@@ -104,6 +104,7 @@ func (sc *Scanner) scanHeader() bool {
 	n, err := sc.rd.Read(sc.header[:])
 	if err != nil {
 		sc.err = fmt.Errorf("failed to read stream header: %v", err)
+		return false
 	}
 	if n != 4 {
 		sc.err = fmt.Errorf("stream header is too small: %v", n)
@@ -240,7 +241,7 @@ func (sc *Scanner) Header() []byte {
 	return sc.header[:]
 }
 
-// BlockSize returns the block size being used bu this stream.
+// BlockSize returns the block size being used by this stream.
 // It can onlybe called after Scan has been called at least once successfully.
 func (sc *Scanner) BlockSize() int {
 	if sc.first {

@@ -10,24 +10,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"os"
 	"os/exec"
 
 	"github.com/cosnicolaou/pbzip2/bzip2"
+	"github.com/cosnicolaou/pbzip2/internal"
 )
 
 // Seed for the pseudorandom generator, must be shared with scanner_test.go
-const randSeed = 0x1234
-
-func genPredictableRandomData(size int) []byte {
-	gen := rand.New(rand.NewSource(randSeed))
-	out := make([]byte, size)
-	for i := range out {
-		out[i] = byte(gen.Intn(256))
-	}
-	return out
-}
 
 func main() {
 	for _, tc := range []struct {
@@ -37,12 +27,12 @@ func main() {
 	}{
 		{"empty", nil, nil},
 		{"hello", []byte("hello world\n"), nil},
-		{"100KB1", genPredictableRandomData(100 * 1024), []string{"-1"}},
-		{"300KB1", genPredictableRandomData(300 * 1024), []string{"-1"}},
-		{"400KB1", genPredictableRandomData(400 * 1024), []string{"-1"}},
-		{"800KB1", genPredictableRandomData(800 * 1024), []string{"-1"}},
-		{"900KB1", genPredictableRandomData(900 * 1024), []string{"-1"}},
-		} {
+		{"100KB1", internal.GenPredictableRandomData(100 * 1024), []string{"-1"}},
+		{"300KB1", internal.GenPredictableRandomData(300 * 1024), []string{"-1"}},
+		{"400KB1", internal.GenPredictableRandomData(400 * 1024), []string{"-1"}},
+		{"800KB1", internal.GenPredictableRandomData(800 * 1024), []string{"-1"}},
+		{"900KB1", internal.GenPredictableRandomData(900 * 1024), []string{"-1"}},
+	} {
 		raw, bz2 := tc.name, tc.name+".bz2"
 		os.Remove(raw)
 		os.Remove(bz2)
@@ -69,9 +59,9 @@ func main() {
 		fmt.Printf("Block Offsets        : %v\n", stats.BlockStartOffsets)
 		fmt.Printf("End of Stream Offset : %v\n", stats.EndOfStreamOffset)
 		var sizes []uint
-		if len(stats.BlockStartOffsets) > 0  {
+		if len(stats.BlockStartOffsets) > 0 {
 			offsets := make([]uint, len(stats.BlockStartOffsets)+1)
-			for i := 0; i< len(offsets)-1 ; i++ {
+			for i := 0; i < len(offsets)-1; i++ {
 				offsets[i] = stats.BlockStartOffsets[i]
 			}
 			offsets[len(offsets)-1] = stats.EndOfStreamOffset
@@ -80,7 +70,6 @@ func main() {
 				sizes[i] = offsets[i+1] - offsets[i] - 48 // subtract size of magic #
 			}
 		}
-		fmt.Printf("Block Sizes          : %v\n",sizes)
+		fmt.Printf("Block Sizes          : %v\n", sizes)
 	}
 }
-

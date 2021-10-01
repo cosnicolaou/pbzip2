@@ -11,37 +11,37 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
 
+	"cloudeng.io/cmdutil"
+	"cloudeng.io/cmdutil/flags"
+	"cloudeng.io/errors"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/cosnicolaou/pbzip2"
 	"github.com/grailbio/base/file"
 	"github.com/grailbio/base/file/s3file"
-	"github.com/grailbio/base/must"
 	"github.com/schollz/progressbar/v2"
 	"golang.org/x/crypto/ssh/terminal"
-	"v.io/x/lib/cmd/flagvar"
 )
 
 type commandlineFlags struct {
-	InputFile        string `cmd:"input,,'input file, s3 path, or url'"`
-	Concurrency      int    `cmd:"concurrency,4,'concurrency for the decompression'"`
-	ProgressBar      bool   `cmd:"progress,true,display a progress bar"`
-	OutputFile       string `cmd:"output,,'output file or s3 path, omit for stdout'"`
-	MaxBlockOverhead int    `cmd:"max-block-overhead,,'the max size of the per block coding tables'"`
-	Verbose          bool   `cmd:"verbose,false,verbose debug/trace information"`
+	InputFile        string `subcmd:"input,,'input file, s3 path, or url'"`
+	Concurrency      int    `subcmd:"concurrency,4,'concurrency for the decompression'"`
+	ProgressBar      bool   `subcmd:"progress,true,display a progress bar"`
+	OutputFile       string `subcmd:"output,,'output file or s3 path, omit for stdout'"`
+	MaxBlockOverhead int    `subcmd:"max-block-overhead,,'the max size of the per block coding tables'"`
+	Verbose          bool   `subcmd:"verbose,false,verbose debug/trace information"`
 }
 
 var commandline commandlineFlags
 
 func init() {
-	must.Nil(flagvar.RegisterFlagsInStruct(flag.CommandLine, "cmd", &commandline,
+	flags.RegisterFlagsInStruct(flag.CommandLine, "subcmd", &commandline,
 		map[string]interface{}{
 			"concurrency": runtime.GOMAXPROCS(-1),
-		}, nil))
+		}, nil)
 	file.RegisterImplementation("s3", func() file.Implementation {
 		return s3file.NewImplementation(
 			s3file.NewDefaultProvider(session.Options{}), s3file.Options{})
@@ -71,16 +71,6 @@ func progressBar(ctx context.Context, progressBarWr io.Writer, ch chan pbzip2.Pr
 			return
 		}
 	}
-}
-
-func OnSignal(fn func(), signals ...os.Signal) {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, signals...)
-	go func() {
-		sig := <-sigCh
-		fmt.Println("stopping on... ", sig)
-		fn()
-	}()
 }
 
 func openFileOrURL(ctx context.Context, name string) (io.Reader, int64, func(context.Context) error, error) {
@@ -131,16 +121,6 @@ func main() {
 	}
 }
 
-func handleOutput(wr io.Writer, dc *pbzip2.Decompressor, errCh chan<- error) {
-	defer close(errCh)
-	_, err := io.Copy(wr, dc.Reader())
-	if err != nil && err != io.EOF {
-		errCh <- err
-		return
-	}
-	errCh <- nil
-}
-
 func optsFromFlags(cl commandlineFlags) (
 	bzOpts []pbzip2.DecompressorOption,
 	scanOpts []pbzip2.ScannerOption,
@@ -165,10 +145,10 @@ func optsFromFlags(cl commandlineFlags) (
 	return
 }
 
-func runner() (returnErr error) {
+func runner() error {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
-	OnSignal(cancel, os.Interrupt)
+	cmdutil.HandleSignals(cancel, os.Interrupt)
 
 	bzOpts, scanOpts, progressBarCh, isTTY := optsFromFlags(commandline)
 	if len(commandline.InputFile) == 0 {
@@ -185,15 +165,6 @@ func runner() (returnErr error) {
 	if err != nil {
 		return err
 	}
-
-	defer func() {
-		if err := writerCleanup(ctx); err != nil {
-			log.Printf("writer cleanup: %v", err)
-			if returnErr == nil {
-				returnErr = err
-			}
-		}
-	}()
 
 	// Kick off the progress bar, if requested and the output is not
 	// being written to stdout.
@@ -213,38 +184,20 @@ func runner() (returnErr error) {
 		}()
 	}
 
-	sc := pbzip2.NewScanner(rd, scanOpts...)
-	dc := pbzip2.NewDecompressor(ctx, bzOpts...)
+	dc := pbzip2.NewReader(ctx, rd,
+		pbzip2.DecompressionOptions(bzOpts...),
+		pbzip2.ScannerOptions(scanOpts...))
 
-	// Kick off the output routine.
-	errCh := make(chan error, 1)
+	errs := &errors.M{}
+	_, err = io.Copy(wr, dc)
+	errs.Append(err)
+	err = writerCleanup(ctx)
+	errs.Append(err)
 
-	go handleOutput(wr, dc, errCh)
-
-	bn := 0
-	for sc.Scan(ctx) {
-		block, bitOffset, size, blockCRC := sc.Block()
-		if commandline.Verbose {
-			fmt.Printf("block # %v: %v bits\n", bn, size)
-		}
-		bn++
-		dc.Decompress(sc.BlockSize(), block, bitOffset, blockCRC)
-	}
-	if err := sc.Err(); err != nil {
-		return fmt.Errorf("scanner: %v", err)
-	}
-	crc, err := dc.Finish()
-	if err != nil {
-		return fmt.Errorf("decompressor: %v", err)
-	}
-	if got, want := crc, sc.StreamCRC(); got != want {
-		returnErr = fmt.Errorf("mismatched CRC: %v != %v", got, want)
-	}
-
-	returnErr = <-errCh
 	if progressBarCh != nil {
 		close(progressBarCh)
 		progressBarWg.Wait()
 	}
-	return
+
+	return errs.Err()
 }

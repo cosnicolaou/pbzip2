@@ -8,6 +8,12 @@ cloud.google.com/go v0.46.3/go.mod h1:a6bKKbmY7er1mI7TEI4lsAkts/mkhTSZK8w33B4RAg
 cloud.google.com/go/bigquery v1.0.1/go.mod h1:i/xbL2UlR5RvWAURpBYZTtm/cXjCha9lbfbpx4poX+o=
 cloud.google.com/go/datastore v1.0.0/go.mod h1:LXYbyblFSglQ5pkeyhO+Qmw7ukd3C+pD7TKLgZqpHYE=
 cloud.google.com/go/pubsub v1.0.1/go.mod h1:R0Gpsv3s54REJCy4fxDixWD93lHJMoZTyQ2kNxGRt3I=
+cloudeng.io/cmdutil v0.0.0-20210810234338-761e51ad96c2 h1:Bwx+MzzRVQDZ8xlSqu+kddvQFZCcp0ptLQWlZiipM4s=
+cloudeng.io/cmdutil v0.0.0-20210810234338-761e51ad96c2/go.mod h1:EwLVTEiRF+bZPVXIzJBuZttVmF6w2ETHcmNIpdOQbTg=
+cloudeng.io/errors v0.0.5/go.mod h1:4iZnGEBj5F3SqTHZF6AHiFMgeHeJWJJkVHx/UwbDYok=
+cloudeng.io/errors v0.0.6 h1:4YRdxFk260BVH2tgFAY5oe2nKWAN0VXbFWlqOqSikUk=
+cloudeng.io/errors v0.0.6/go.mod h1:4iZnGEBj5F3SqTHZF6AHiFMgeHeJWJJkVHx/UwbDYok=
+cloudeng.io/text v0.0.8/go.mod h1:VPOCvDDUBocQe7rfQDZcyEpScLooZo/6cJs1cM0LOMI=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/DATA-DOG/go-sqlmock v1.3.3/go.mod h1:f/Ixk793poVmq4qj/V1dPUg2JEAKC73Q5eFN3EC/SaM=
@@ -268,9 +274,7 @@ rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8
 rsc.io/goversion v1.0.0/go.mod h1:Eih9y/uIBS3ulggl7KNJ09xGSLcuNaLgmvvqa07sgfo=
 rsc.io/pdf v0.1.1/go.mod h1:n8OzWcQ6Sp37PL01nO98y4iUCRdTGarVfzxY20ICaU4=
 v.io v0.1.5/go.mod h1:Apu/AQfn7lq+o3m+ReLtlrKxkZTTo2p6mLXlioAUWA0=
-v.io v0.1.8 h1:9pMw27Epqq4CinvudXX5fOlERasYzZYqoxDYxwXda2U=
 v.io v0.1.8/go.mod h1:63LjtWsxMaRKYc9sMM0rXCYxkhZ1/1aNJOS6He4qkPU=
 v.io/x/lib v0.1.4/go.mod h1:maU79RWqiiC9ARbvS+2Q8tqZUnQiHxeJDriXcW7cYg8=
-v.io/x/lib v0.1.5 h1:Nv82WPqT0W9vHdc2CnLEOQepmSCsvEKUQHFwf/kXc6s=
 v.io/x/lib v0.1.5/go.mod h1:aLm+mPXyXf4Vd/n+1f4LcSQFFgqNhNzwQvHYfXoOLlE=
 v.io/x/ref/lib/flags/sitedefaults v0.1.1/go.mod h1:ew4Igo60KMBDYhnxH6l7P+qBCJiqR8PVp7fJJYGqILA=

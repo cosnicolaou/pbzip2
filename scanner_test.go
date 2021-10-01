@@ -20,19 +20,69 @@ import (
 	"github.com/cosnicolaou/pbzip2/internal"
 )
 
-func createBzipFile(t *testing.T, filename, blockSize string, data []byte) (io.ReadCloser, []byte) {
-	if err := internal.CreateBzipFile(filename, blockSize, data); err != nil {
-		return nil, nil
+var (
+	bzip2Files map[string]string
+	bzip2Data  map[string][]byte
+)
+
+// generateCompressedFiles writes a set of test compressed bzip2 test files.
+func generateCompressedFiles(tmpdir string) (map[string]string, map[string][]byte, error) {
+	names := map[string]string{}
+	data := map[string][]byte{}
+	for _, tc := range []struct {
+		name      string
+		data      []byte
+		blockSize string
+	}{
+		{"empty", nil, "-1"},
+		{"hello", []byte("hello world\n"), "-1"},
+		{"100KB1", internal.GenPredictableRandomData(100 * 1024), "-1"},
+		{"300KB1", internal.GenPredictableRandomData(300 * 1024), "-1"},
+		{"400KB1", internal.GenPredictableRandomData(400 * 1024), "-1"},
+		{"800KB1", internal.GenPredictableRandomData(800 * 1024), "-1"},
+		{"900KB1", internal.GenPredictableRandomData(900 * 1024), "-1"},
+
+		{"300KB3_Random", internal.GenReproducibleRandomData(300 * 1024), "-3"},
+		{"900KB2_Random", internal.GenReproducibleRandomData(900 * 1024), "-2"},
+		{"1033KB4_Random", internal.GenReproducibleRandomData(1033 * 1024), "-4"},
+	} {
+		filename := filepath.Join(tmpdir, tc.name)
+		if err := internal.CreateBzipFile(filename, tc.blockSize, tc.data); err != nil {
+			return nil, nil, err
+		}
+		names[tc.name] = filename
+		data[tc.name] = tc.data
+
 	}
+	return names, data, nil
+}
+
+func TestMain(m *testing.M) {
+	tmpdir, err := ioutil.TempDir("", "pbzip")
+	if err != nil {
+		panic(err)
+	}
+	bzip2Files, bzip2Data, err = generateCompressedFiles(tmpdir)
+	if err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
+func readBzipFile(t *testing.T, filename string) []byte {
 	gobuf, err := stdlibBzip2(filename + ".bz2")
 	if err != nil {
 		t.Fatalf("%v: %v", filename, err)
 	}
+	return gobuf
+}
+
+func openBzipFile(t *testing.T, filename string) io.ReadCloser {
 	rd, err := os.Open(filename + ".bz2")
 	if err != nil {
 		t.Fatalf("%v: %v", filename, err)
 	}
-	return rd, gobuf
+	return rd
 }
 
 func progress(n string, prgCh chan Progress) error {
@@ -79,46 +129,35 @@ func bci(c ...int) []int {
 }
 
 func TestScan(t *testing.T) {
-	tmpdir := t.TempDir()
 	ctx := context.Background()
 	for _, tc := range []struct {
 		name       string
-		data       []byte
-		blockSize  string
 		streamCRC  uint32
 		blockCRCs  []uint32
 		blockSizes []int
 	}{
-		{"empty", nil, "-1", 0, bc(), bci()},
-		{"hello", []byte("hello world\n"), "-1",
-			1324148790,
-			bc(1324148790),
-			bci(253)},
-		{"100KB1", internal.GenPredictableRandomData(100 * 1024), "-1",
-			2846214228,
-			bc(984137596, 3707025068),
-			bci(806206, 22712)},
-		{"300KB1", internal.GenPredictableRandomData(300 * 1024), "-1",
-			2560071082,
+		{"empty", 0, bc(), bci()},
+		{"hello", 1324148790, bc(1324148790), bci(253)},
+		{"100KB1", 2846214228, bc(984137596, 3707025068), bci(806206, 22712)},
+		{"300KB1", 2560071082,
 			bc(984137596, 1527206082, 1102975844, 2729642890),
 			bci(806206, 806273, 806182, 61754)},
-		{"400KB1", internal.GenPredictableRandomData(400 * 1024), "-1",
+		{"400KB1",
 			182711008,
 			bc(984137596, 1527206082, 1102975844, 1428961015, 3572671310),
 			bci(806206, 806273, 806182, 806254, 81086)},
-		{"800KB1", internal.GenPredictableRandomData(800 * 1024), "-1",
+		{"800KB1",
 			139967838,
 			bc(984137596, 1527206082, 1102975844, 1428961015, 4117679320, 2969657708, 1647728401, 4168645754, 1334625769),
 			bci(806206, 806273, 806182, 806254, 806158, 806323, 806263, 806295, 158358)},
-		{"900KB1", internal.GenPredictableRandomData(900 * 1024), "-1",
+		{"900KB1",
 			1402104902,
 			bc(984137596, 1527206082, 1102975844, 1428961015, 4117679320, 2969657708, 1647728401, 4168645754, 360300138, 4141343228),
 			bci(806206, 806273, 806182, 806254, 806158, 806323, 806263, 806295, 806166, 177790)},
 	} {
-		rd, stdlibData := createBzipFile(t,
-			filepath.Join(tmpdir, tc.name),
-			tc.blockSize,
-			tc.data)
+		filename := bzip2Files[tc.name]
+		rd, stdlibData := openBzipFile(t, filename), readBzipFile(t, filename)
+
 		defer rd.Close()
 
 		var (
@@ -179,7 +218,7 @@ func TestScan(t *testing.T) {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
 		}
 
-		if got, want := data, tc.data; !bytes.Equal(got, want) {
+		if got, want := data, bzip2Data[tc.name]; !bytes.Equal(got, want) {
 			t.Errorf("%v: got %v..., want %v...", tc.name, internal.FirstN(10, got), internal.FirstN(10, want))
 		}
 
@@ -198,7 +237,7 @@ func TestScan(t *testing.T) {
 		if err := perr; err != nil {
 			t.Errorf("failed to read from parallel decompressor: %v", err)
 		}
-		if got, want := pbuf, tc.data; !bytes.Equal(got, want) {
+		if got, want := pbuf, bzip2Data[tc.name]; !bytes.Equal(got, want) {
 			t.Errorf("%v: got %v..., want %v...", tc.name, internal.FirstN(10, got), internal.FirstN(10, want))
 		}
 		close(prgCh)

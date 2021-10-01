@@ -1,3 +1,7 @@
+// Copyright 2021 Cosmos Nicolaou. All rights reserved.
+// Use of this source code is governed by the Apache-2.0
+// license that can be found in the LICENSE file.
+
 package internal
 
 import (
@@ -5,13 +9,24 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os/exec"
+	"time"
 )
 
 // Seed for the pseudorandom generator, must be shared with gentestdata.go
-const randSeed = 0x1234
+const fixdRandSeed = 0x1234
 
+var randSource rand.Source
+
+func init() {
+	randSeed := time.Now().UnixNano()
+	fmt.Printf("rand seed for GenReproducibleRandomData: %v\n", randSeed)
+	randSource = rand.NewSource(randSeed)
+}
+
+// GenPredictableRandomData generates random data starting with a fixed
+// known seed.
 func GenPredictableRandomData(size int) []byte {
-	gen := rand.New(rand.NewSource(randSeed))
+	gen := rand.New(rand.NewSource(fixdRandSeed))
 	out := make([]byte, size)
 	for i := range out {
 		out[i] = byte(gen.Intn(256))
@@ -19,6 +34,18 @@ func GenPredictableRandomData(size int) []byte {
 	return out
 }
 
+// GenReproducibleRandomData uses the random # seed printed out by this
+// file's init function.
+func GenReproducibleRandomData(size int) []byte {
+	gen := rand.New(randSource)
+	out := make([]byte, size)
+	for i := range out {
+		out[i] = byte(gen.Intn(256))
+	}
+	return out
+}
+
+// CreateBzipFile creates a bzip file of the supplied raw data.
 func CreateBzipFile(filename, blockSize string, data []byte) error {
 	if err := ioutil.WriteFile(filename, data, 0660); err != nil {
 		return fmt.Errorf("write file: %v: %v", filename, err)
@@ -31,6 +58,7 @@ func CreateBzipFile(filename, blockSize string, data []byte) error {
 	return nil
 }
 
+// FirstN returns at most the first n bytes of b.
 func FirstN(n int, b []byte) []byte {
 	if len(b) > n {
 		return b[:n]
