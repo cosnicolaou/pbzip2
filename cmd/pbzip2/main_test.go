@@ -17,9 +17,8 @@ import (
 func pbzipCmd(filename string) ([]byte, string, error) {
 	ifile := filename + ".bz2"
 	ofile := filename + ".test"
-	cmd := exec.Command("go", "run", ".",
-		"--input="+ifile,
-		"--output="+ofile,
+	cmd := exec.Command("go", "run", ".", "unzip",
+		"--output="+ofile, ifile,
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

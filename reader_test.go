@@ -243,8 +243,7 @@ func TestReaderErrors(t *testing.T) {
 	corrupted := buf[:9000]
 	corrupted = append(corrupted, pbzip2.BlockMagic()...)
 	corrupted = append(corrupted, buf[9000:]...)
-	testError(buf, "bzip2 data invalid: data exceeds block size")
-
+	testError(corrupted, "bzip2 data invalid: data exceeds block size")
 }
 
 type errorReader struct{}
