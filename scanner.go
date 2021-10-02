@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cosnicolaou/pbzip2/internal/bits"
+	"github.com/cosnicolaou/pbzip2/internal/bitstream"
 	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
@@ -39,7 +39,7 @@ var (
 )
 
 func Init() {
-	firstBlockMagicLookup, secondBlockMagicLookup = bits.Init()
+	firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init()
 }
 
 // Scanner returns runs of entire bz2 blocks. It works by splitting the input
@@ -125,7 +125,7 @@ func readCRC(block []byte, shift int) uint32 {
 	tmp := make([]byte, 5)
 	copy(tmp, block[:5])
 	for i := 8; i > shift; i-- {
-		tmp = bits.StreamShift(tmp)
+		tmp = bitstream.Shift(tmp)
 	}
 	return binary.BigEndian.Uint32(tmp[1:5])
 }
@@ -179,7 +179,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	}
 
 	// Look for the next block magic or eof.
-	byteOffset, bitOffset := bits.ScanStream(firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	byteOffset, bitOffset := bitstream.Scan(firstBlockMagicLookup, secondBlockMagicLookup, buf)
 	if byteOffset == -1 {
 		if !eof {
 			sc.err = fmt.Errorf("failed to find next block within expected max buffer size of %v", lookahead)
@@ -202,7 +202,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 }
 
 func (sc *Scanner) handleEOF(buf []byte) bool {
-	trailer, trailerSize, trailerOffset := bits.FindTrailingMagicAndCRC(buf, bzip2.EOSMagic[:])
+	trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(buf, bzip2.EOSMagic[:])
 	if trailerSize == -1 {
 		sc.err = fmt.Errorf("failed to find trailer")
 		return false

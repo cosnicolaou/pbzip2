@@ -1,7 +1,7 @@
 // Copyright 2020 Cosmos Nicolaou. All rights reserved.
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
-package bits
+package bitstream
 
 import (
 	"bytes"
@@ -30,9 +30,9 @@ func Init() (firstMagic, secondMagic map[uint32]uint8) {
 //       the most significant bit being the first bit, that is, it the bitstream
 //       can be visualized as flowing from left to right.
 
-// StreamShift shifts the contents of a  byte slice, with carry, one position
+// Shift shifts the contents of a  byte slice, with carry, one position
 // to the right. The carry is from the least significant bit to the most significant.
-func StreamShift(input []byte) []byte {
+func Shift(input []byte) []byte {
 	for pos := len(input) - 1; pos >= 1; pos-- {
 		input[pos] >>= 1
 		input[pos] = (input[pos] & 0x7f) | (input[pos-1] & 0x1 << 7)
@@ -76,7 +76,7 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 			secondWordMap[binary.LittleEndian.Uint32(second[2:])] = 0
 			// shift right 8 times.
 			for s := 1; s < 8; s++ {
-				second = StreamShift(second)
+				second = Shift(second)
 				secondWordMap[binary.LittleEndian.Uint32(second[2:])] = uint8(s)
 			}
 		}
@@ -94,7 +94,7 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 	to := 2
 	mask := uint8(0xff)
 	for shift := uint8(1); shift <= 7; shift++ {
-		first = StreamShift(first)
+		first = Shift(first)
 		mask >>= 1
 		for j := 0; j < to; j++ {
 			first[0] = (first[0] & mask) | (byte(j) << (8 - shift))
@@ -105,14 +105,14 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 	return
 }
 
-// ScanStream returns the first occurrence of the pattern matched by
+// Scan returns the first occurrence of the pattern matched by
 // the two lookup tables, in its input treating that input as a bitstream.
 // It returns the offset of the byte containing the first byte of the
 // pattern and the bit offset in that byte that the pattern starts at.
 // That is, if the pattern occurs in the third byte, the byte offset will be
 // two. If the pattern starts at the 2nd bit in the third byte, the byte offset
 // is still two, and the bit offset will be 2.
-func ScanStream(first, second map[uint32]uint8, input []byte) (int, int) {
+func Scan(first, second map[uint32]uint8, input []byte) (int, int) {
 	pos := 0
 	il := len(input)
 	for {
@@ -170,7 +170,7 @@ func FindTrailingMagicAndCRC(buf []byte, trailer []byte) (crc []byte, length int
 	copy(unaligned, buf[len(buf)-11:])
 	for p := 0; p < 7; p++ {
 		// shift until all of the padding has been consumed
-		unaligned = StreamShift(unaligned)
+		unaligned = Shift(unaligned)
 		if idx := bytes.Index(unaligned[1:], trailer); idx == 0 {
 			copy(crc, unaligned[7:11])
 			return crc, 10, (7 - p)
