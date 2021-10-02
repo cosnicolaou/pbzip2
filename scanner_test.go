@@ -17,8 +17,8 @@ import (
 	"testing"
 
 	"github.com/cosnicolaou/pbzip2"
-	"github.com/cosnicolaou/pbzip2/bzip2"
 	"github.com/cosnicolaou/pbzip2/internal"
+	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
 var (
@@ -76,6 +76,13 @@ func readBzipFile(t *testing.T, filename string) []byte {
 		t.Fatalf("%v: %v", filename, err)
 	}
 	return gobuf
+}
+func readFile(t *testing.T, name string) ([]byte, int) {
+	buf, err := os.ReadFile(bzip2Files[name] + ".bz2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return buf, len(buf) - 1
 }
 
 func openBzipFile(t *testing.T, filename string) io.ReadCloser {

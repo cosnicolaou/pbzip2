@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cosnicolaou/pbzip2/bzip2"
+	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
 var numDecompressionGoRoutines int64
