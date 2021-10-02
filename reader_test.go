@@ -18,6 +18,7 @@ import (
 
 	"github.com/cosnicolaou/pbzip2"
 	"github.com/cosnicolaou/pbzip2/internal"
+	ibzip2 "github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
 func ExampleReader() {
@@ -241,7 +242,7 @@ func TestReaderErrors(t *testing.T) {
 
 	buf, _ = readFile("300KB1")
 	corrupted := buf[:9000]
-	corrupted = append(corrupted, pbzip2.BlockMagic()...)
+	corrupted = append(corrupted, ibzip2.BlockMagic[:]...)
 	corrupted = append(corrupted, buf[9000:]...)
 	testError(corrupted, "bzip2 data invalid: data exceeds block size")
 }

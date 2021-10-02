@@ -10,7 +10,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sync"
+
+	"github.com/cosnicolaou/pbzip2/internal/bits"
+	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
 type scannerOpts struct {
@@ -33,19 +35,11 @@ func ScanBlockOverhead(b int) ScannerOption {
 // See https://en.wikipedia.org/wiki/Bzip2 for an explanation of the file
 // format.
 var (
-	bzip2FileMagic = []byte{0x42, 0x5a} // "BZ"
-
-	bzip2BlockMagic = [6]byte{0x31, 0x41, 0x59, 0x26, 0x53, 0x59}
-	bzip2EOSMagic   = [6]byte{0x17, 0x72, 0x45, 0x38, 0x50, 0x90}
-
 	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
-	initOnce                                      sync.Once
 )
 
 func Init() {
-	initOnce.Do(func() {
-		firstBlockMagicLookup, secondBlockMagicLookup = allShiftedValues(bzip2BlockMagic)
-	})
+	firstBlockMagicLookup, secondBlockMagicLookup = bits.Init()
 }
 
 // Scanner returns runs of entire bz2 blocks. It works by splitting the input
@@ -107,7 +101,7 @@ func (sc *Scanner) scanHeader() bool {
 		sc.err = fmt.Errorf("stream header is too small: %v", n)
 		return false
 	}
-	if !bytes.Equal(sc.header[0:2], bzip2FileMagic) {
+	if !bytes.Equal(sc.header[0:2], bzip2.FileMagic) {
 		sc.err = fmt.Errorf("wrong file magic: %x", sc.header[0:2])
 		return false
 	}
@@ -131,7 +125,7 @@ func readCRC(block []byte, shift int) uint32 {
 	tmp := make([]byte, 5)
 	copy(tmp, block[:5])
 	for i := 8; i > shift; i-- {
-		tmp = bitstreamShift(tmp)
+		tmp = bits.StreamShift(tmp)
 	}
 	return binary.BigEndian.Uint32(tmp[1:5])
 }
@@ -172,12 +166,12 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		// end of one. Therefore the first block must be handled specially.
 		// If this is the first block, and it starts with a block magic
 		// number, discard that block magic and search for the next one.
-		if bytes.HasPrefix(buf, bzip2BlockMagic[:]) {
-			sc.brd.Discard(len(bzip2BlockMagic))
-			buf = buf[len(bzip2BlockMagic):]
+		if bytes.HasPrefix(buf, bzip2.BlockMagic[:]) {
+			sc.brd.Discard(len(bzip2.BlockMagic))
+			buf = buf[len(bzip2.BlockMagic):]
 			sc.bufBitOffset = 0
 			sc.prevBitOffset = 0
-		} else if bytes.HasPrefix(buf, bzip2EOSMagic[:]) {
+		} else if bytes.HasPrefix(buf, bzip2.EOSMagic[:]) {
 			// Handle the 'empty file/stream' case since for that
 			// there os only an EOS block.
 			return false
@@ -185,7 +179,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	}
 
 	// Look for the next block magic or eof.
-	byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	byteOffset, bitOffset := bits.ScanStream(firstBlockMagicLookup, secondBlockMagicLookup, buf)
 	if byteOffset == -1 {
 		if !eof {
 			sc.err = fmt.Errorf("failed to find next block within expected max buffer size of %v", lookahead)
@@ -203,12 +197,12 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	}
 	sc.prevBitOffset = bitOffset
 	// skip the magic # before starting the search for the next magic #.
-	sc.brd.Discard(byteOffset + len(bzip2BlockMagic))
+	sc.brd.Discard(byteOffset + len(bzip2.BlockMagic))
 	return true
 }
 
 func (sc *Scanner) handleEOF(buf []byte) bool {
-	trailer, trailerSize, trailerOffset := findTrailingMagicAndCRC(buf, bzip2EOSMagic[:])
+	trailer, trailerSize, trailerOffset := bits.FindTrailingMagicAndCRC(buf, bzip2.EOSMagic[:])
 	if trailerSize == -1 {
 		sc.err = fmt.Errorf("failed to find trailer")
 		return false

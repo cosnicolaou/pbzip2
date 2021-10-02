@@ -1,7 +1,7 @@
 // Copyright 2020 Cosmos Nicolaou. All rights reserved.
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
-package pbzip2
+package bits
 
 import (
 	"bytes"
@@ -9,18 +9,11 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
-
-func GetNumDecompressionGoRoutines() int64 {
-	return atomic.LoadInt64(&numDecompressionGoRoutines)
-}
-
-func BlockMagic() []byte {
-	return bzip2BlockMagic[:]
-}
 
 func TestBitstreamShift(t *testing.T) {
 	b := func(b ...byte) []byte {
@@ -67,7 +60,7 @@ func prbits(in []byte) string {
 }
 
 func TestBitPatterns(t *testing.T) {
-	m0, m1, m2, m3, m4, m5 := bzip2BlockMagic[0], bzip2BlockMagic[1], bzip2BlockMagic[2], bzip2BlockMagic[3], bzip2BlockMagic[4], bzip2BlockMagic[5]
+	m0, m1, m2, m3, m4, m5 := bzip2.BlockMagic[0], bzip2.BlockMagic[1], bzip2.BlockMagic[2], bzip2.BlockMagic[3], bzip2.BlockMagic[4], bzip2.BlockMagic[5]
 
 	Init()
 	// Find the appropriate prefix of the first 4 bytes magic # in the
@@ -127,8 +120,8 @@ func insertMagic(buf, magic []byte, p int) []byte {
 }
 
 func shifted(shift int) []byte {
-	buf := make([]byte, len(bzip2BlockMagic)+1)
-	copy(buf, bzip2BlockMagic[:])
+	buf := make([]byte, len(bzip2.BlockMagic)+1)
+	copy(buf, bzip2.BlockMagic[:])
 	for i := 0; i < shift; i++ {
 		buf = bitstreamShift(buf)
 	}
@@ -140,13 +133,13 @@ func TestFindPatterns(t *testing.T) {
 		buf                   []byte
 		byteOffset, bitOffset int
 	}{
-		{bzip2BlockMagic[:], 0, 0},
-		{append(bzip2BlockMagic[:], 0x11), 0, 0},
-		{append(bzip2BlockMagic[:], 0x26), 0, 0},
-		{append(bzip2BlockMagic[:], 0xda, 0x4b, 0xd0, 0xce), 0, 0},
-		{append([]byte{0xff}, bzip2BlockMagic[:]...), 1, 0},
-		{append([]byte{0x2b, 0xff}, bzip2BlockMagic[:]...), 2, 0},
-		{append([]byte{0x0}, bzip2BlockMagic[:]...), 1, 0},
+		{bzip2.BlockMagic[:], 0, 0},
+		{append(bzip2.BlockMagic[:], 0x11), 0, 0},
+		{append(bzip2.BlockMagic[:], 0x26), 0, 0},
+		{append(bzip2.BlockMagic[:], 0xda, 0x4b, 0xd0, 0xce), 0, 0},
+		{append([]byte{0xff}, bzip2.BlockMagic[:]...), 1, 0},
+		{append([]byte{0x2b, 0xff}, bzip2.BlockMagic[:]...), 2, 0},
+		{append([]byte{0x0}, bzip2.BlockMagic[:]...), 1, 0},
 		{append([]byte{0x0}, shifted(1)...), 1, 1},
 		{append([]byte{0x0}, shifted(2)...), 1, 2},
 		{append([]byte{0x0}, shifted(6)...), 1, 6},
@@ -178,7 +171,7 @@ func TestFindPatterns(t *testing.T) {
 			// aligned magic number we want to find.
 			buf := make([]byte, i)
 			copy(buf, filler)
-			m := insertMagic(buf, bzip2BlockMagic[:], p)
+			m := insertMagic(buf, bzip2.BlockMagic[:], p)
 			byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, m)
 			if got, want := byteOffset, p/8; got != want {
 				t.Fatalf("%v: %v: got %v, want %v", i, p, got, want)
@@ -197,7 +190,7 @@ func TestPartialFalsePositives(t *testing.T) {
 	partial := [6][]byte{}
 	for i := range partial {
 		partial[i] = make([]byte, i+1)
-		copy(partial[i], bzip2BlockMagic[:i+1])
+		copy(partial[i], bzip2.BlockMagic[:i+1])
 	}
 	// zero out the last bit of the complete magic # so that it doesn't
 	// match
@@ -215,7 +208,7 @@ func TestPartialFalsePositives(t *testing.T) {
 		copy(tmp, p)
 		for shift := 0; shift < 7; shift++ {
 			tmp = bitstreamShift(tmp)
-			copy(tmp[len(tmp)-6:], bzip2BlockMagic[:])
+			copy(tmp[len(tmp)-6:], bzip2.BlockMagic[:])
 			byteOffset, bitOffset := scanBitStream(firstBlockMagicLookup, secondBlockMagicLookup, tmp)
 			if got, want := byteOffset, len(p); got != want {
 				t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
@@ -232,12 +225,12 @@ func TestFindTrailer(t *testing.T) {
 	end := 10
 	for i := 0; i < 8; i++ {
 		buf := make([]byte, 6+4+1)
-		copy(buf, bzip2EOSMagic[:])
+		copy(buf, bzip2.EOSMagic[:])
 		copy(buf[6:], crc)
 		for s := 0; s < i; s++ {
 			buf = bitstreamShift(buf)
 		}
-		found, length, offset := findTrailingMagicAndCRC(buf[:end], bzip2EOSMagic[:])
+		found, length, offset := findTrailingMagicAndCRC(buf[:end], bzip2.EOSMagic[:])
 		if got, want := found, crc; !bytes.Equal(got, want) {
 			t.Errorf("%v: got: %02x, want %02x\n", i, got, want)
 		}
