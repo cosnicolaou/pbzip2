@@ -20,10 +20,14 @@ The API to use the parallel decompressor is simple:
 The scanner identifies blocks by searching for the magic numbers that denote
 the start of a block and the end of the file. Consequently it will be fooled
 if these 6 byte sequences occur in the compressed data but the probability of
-this happening is obviously very low and even if it were to happen the block decompressor
-would error out with a failed CRC check. This case could be handled by
-adding support for ignoring specific instances of the magic numbers, but for
-now, the assumption is made that this is rare enough to be safely ignored.
+this happening is very low (P(a specific 6-byte sequence occurring randomly)),
+however, given enough data it will happen. Therefore the decompressor
+will attempt to merge blocks that fail to decompress, assuming that the
+original bzip block was split because of such a false positive. With this
+in place it will take two occurrences of the bzip2 block magic number
+occurring to break the decompressor. This boils down to the probability
+of a specific 6-byte sequence occurring randomly, twice, within about a MB of
+data.
 
 There are three components to this package:
 1. the scanner

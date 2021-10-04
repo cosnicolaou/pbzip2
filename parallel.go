@@ -278,6 +278,9 @@ func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc
 	}
 	next := (*dc.heap)[0]
 	bwr := &bitstream.BitWriter{}
+	// Note that the first block has an offset in the first byte and a size in
+	// bits and hence need the sum of those to accurently reflect the size of
+	// the first block in terms of appending to it.
 	bwr.Init(min.block, min.blockSizeBits+min.offset, len(min.block)+len(next.block)+len(blockMagic)+1)
 	bwr.Append(blockMagic[:], 0, len(blockMagic)*8)
 	bwr.Append(next.block, next.offset, next.blockSizeBits)
