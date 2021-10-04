@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cosnicolaou/pbzip2/internal/bitstream"
 	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
@@ -235,56 +236,61 @@ func (h *blockHeap) Pop() interface{} {
 	return x
 }
 
+func prettyPrintBlock(block []byte) {
+	for i := 0; i < len(block); i++ {
+		if i > 0 && (i%32 == 0) {
+			fmt.Println()
+		}
+		fmt.Printf("%02x ", block[i])
+	}
+	fmt.Println()
+}
+
+// tryMergeBlocks attempts to merge two consecutive blocks in the hope that
+// they were split because of a false positive detection of the block magic
+// byte sequence in the payload of a block. This may happen when processing
+// very large amounts of data (eg. PB) the probability is essentially
+// that of a specific 6 byte sequence occurring randomly.
+// Merging two blocks like this means that it would take two false positives
+// within the /same/ block to defeat the code here, which given that blocks
+// are relatively small is even less likely to happen.
 func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc, min *blockDesc) bool {
-	for len(*dc.heap) <= 1 {
-		select {
-		case block := <-ch:
-			if block == nil {
-				// channel has been closed.
+	// wait for the second consecutive block.
+	for {
+		for len(*dc.heap) < 1 {
+			select {
+			case block, ok := <-ch:
+				if !ok {
+					// channel has been closed.
+					return false
+				}
+				heap.Push(dc.heap, block)
+			case <-ctx.Done():
+				err := ctx.Err()
+				dc.trace("tryMergeBlocks: %v", err)
+				dc.pwr.CloseWithError(err)
 				return false
 			}
-			heap.Push(dc.heap, block)
-		case <-ctx.Done():
-			err := ctx.Err()
-			dc.trace("tryMergeBlocks: %v", err)
-			dc.pwr.CloseWithError(err)
-			return false
+		}
+		if (*dc.heap)[0].order == min.order+1 {
+			break
 		}
 	}
-	fmt.Printf("merging: %v\n", min)
-	if len(*dc.heap) > 1 {
-		next := (*dc.heap)[1]
-		merged := &blockDesc{
-			order: min.order,
-			crc:   min.crc,
-			blockSizeBits: min.blockSizeBits +
-				(len(blockMagic) * 8) +
-				next.blockSizeBits,
-			bzipBlockSize: min.bzipBlockSize,
-			offset:        min.offset,
-		}
-		m := make([]byte, 0, len(min.block)+len(next.block)+len(blockMagic))
+	next := (*dc.heap)[0]
+	bwr := &bitstream.BitWriter{}
+	bwr.Init(min.block, min.blockSizeBits+min.offset, len(min.block)+len(next.block)+len(blockMagic)+1)
+	bwr.Append(blockMagic[:], 0, len(blockMagic)*8)
+	bwr.Append(next.block, next.offset, next.blockSizeBits)
+	min.block, min.blockSizeBits = bwr.Data()
 
-		m = append(m, min.block...)
-		m = append(m, blockMagic[:]...)
-		m = append(m, next.block...)
-
-		merged.block = m
-		fmt.Printf("NEW: L: %v\n", len(m))
-		merged.decompress()
-		if merged.err != nil {
-			fmt.Printf("WTF..... %v\n", merged.err)
-			return false
-		}
-		fmt.Printf("ELSE..... all good...\n")
-
-		// merge succeeded, remove the block that was merged into the
-		// top of the heap from the heap.
-		(*dc.heap)[0] = merged
-		heap.Remove(dc.heap, 1)
-		return true
+	min.decompress()
+	if min.err != nil {
+		return false
 	}
-	return false
+	// The merge succeeded, remove the block that was merged from the heap.
+	heap.Remove(dc.heap, 0)
+	return true
+
 }
 
 func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
@@ -303,19 +309,22 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 				if min.order != expected {
 					break
 				}
+				heap.Remove(dc.heap, 0)
+				expected++
 				if err := min.err; err != nil {
 					if !dc.tryMergeBlocks(ctx, ch, min) {
 						dc.pwr.CloseWithError(err)
 						return
 					}
-					min = (*dc.heap)[0]
+					// merge was successful, so bump up the next
+					// expected block number.
+					expected++
 				}
 				if _, err := dc.pwr.Write(min.data); err != nil {
 					dc.pwr.CloseWithError(err)
 					return
 				}
 				dc.streamCRC = updateStreamCRC(dc.streamCRC, min.crc)
-				heap.Remove(dc.heap, 0)
 				if dc.progressCh != nil {
 					dc.progressCh <- Progress{
 						Duration:   min.duration,
@@ -325,7 +334,6 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 						Size:       len(min.data),
 					}
 				}
-				expected++
 			}
 			if block == nil && len(*dc.heap) == 0 {
 				return

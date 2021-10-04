@@ -77,6 +77,7 @@ func readBzipFile(t *testing.T, filename string) []byte {
 	}
 	return gobuf
 }
+
 func readFile(t *testing.T, name string) ([]byte, int) {
 	buf, err := os.ReadFile(bzip2Files[name] + ".bz2")
 	if err != nil {

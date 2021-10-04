@@ -14,48 +14,72 @@ import (
 func TestHandlingFalsePositives(t *testing.T) {
 	ctx := context.Background()
 	filename := bzip2Files["300KB1"]
+
 	rd := openBzipFile(t, filename)
-	data, err := io.ReadAll(rd)
+	origData, err := io.ReadAll(rd)
 	if err != nil {
-		t.Fatal(data)
+		t.Fatal(err)
 	}
+	godata := readBzipFile(t, filename)
 
-	//
-	falsePositive := [6]byte{0xbb, 0x7a, 0x1b, 0xda, 0xf7, 0x27}
-	//	d562    d965    c82c
-	//	falsePositive = [6]byte{0x62, 0xd5, 0x65, 0xd9, 0x2c, 0xc8}
-
-	pbzip2.SetCustomBlockMagic(falsePositive)
 	defer pbzip2.ResetBlockMagic()
 
-	// Block offsets in bits are from the output of gentestdata.go
-	for _, offset := range []int{32, 806286, 1612607, 2418837} {
-		bitstream.OverwriteAtBitOffset(data, offset, falsePositive[:])
-	}
+	// Fake a false positive by finding some sequences that occur as
+	// data and then changing the block magic values to be these
+	// naturally ocurring sequences.
+	for i, falsePositiveRange := range [][8]byte{
+		{0xae, 0x91, 0xff, 0x6b, 0x72, 0xb1, 0xa4, 0x7a},
+		{0xed, 0xbb, 0x7a, 0x1b, 0xda, 0xf7, 0x27, 0x57},
+	} {
 
-	fbl, sbl := bitstream.AllShiftedValues(falsePositive)
-	o := 0
-	prev := 0
-	for {
-		byteOffset, bitOffset := bitstream.Scan(fbl, sbl, data[o:])
-		fmt.Printf("%d %d -> %d\n", byteOffset, bitOffset, prev+(byteOffset*8)+bitOffset)
-		if byteOffset < 0 {
-			break
+		for s := 0; s < 8; s++ {
+			data := make([]byte, len(origData))
+			copy(data, origData)
+
+			var (
+				falsePositive [6]byte
+				tmp           [8]byte
+			)
+			copy(tmp[:], falsePositiveRange[:])
+			for i := 0; i < s; i++ {
+				bitstream.ShiftRight(tmp[:])
+			}
+			copy(falsePositive[:], tmp[1:7])
+
+			fmt.Printf("magic: %08b\n", falsePositive)
+
+			// Block offsets in bits are from the output of gentestdata.go
+			for _, offset := range []int{32, 806286, 1612607, 2418837} {
+				bitstream.OverwriteAtBitOffset(data, offset, falsePositive[:])
+			}
+
+			pbzip2.SetCustomBlockMagic(falsePositive)
+			brd := pbzip2.NewReader(ctx, bytes.NewBuffer(data))
+			buf := bytes.NewBuffer(make([]byte, 0, 1000*1024))
+			_, err = io.Copy(buf, brd)
+			if err != nil {
+				t.Error(err)
+			}
+
+			if got, want := buf.Bytes(), godata; !bytes.Equal(got, want) {
+				if testing.Verbose() {
+					fmt.Printf("got\n")
+					prettyPrintBlock(got)
+					fmt.Printf("want\n")
+					prettyPrintBlock(want)
+				}
+				t.Errorf("%v: got %v, want %v", i, len(got), len(want))
+			}
 		}
-		o += byteOffset + 6
-		prev += (byteOffset * 8) + bitOffset
 	}
+}
 
-	brd := pbzip2.NewReader(ctx, bytes.NewBuffer(data))
-	buf := bytes.NewBuffer(make([]byte, 0, 1000*1024))
-	_, err = io.Copy(buf, brd)
-	if err != nil {
-		t.Error(err)
+func prettyPrintBlock(block []byte) {
+	for i := 0; i < len(block); i++ {
+		if i > 0 && (i%32 == 0) {
+			fmt.Println()
+		}
+		fmt.Printf("%02x ", block[i])
 	}
-
-	fmt.Printf("ERR: %v\n", err)
-
-	fmt.Printf("%v: %v %v: %v\n", len(data), 806206, 22712, 806206+22712)
-
-	//	t.FailNow()
+	fmt.Println()
 }

@@ -128,7 +128,7 @@ func readCRC(block []byte, shift int) uint32 {
 	tmp := make([]byte, 5)
 	copy(tmp, block[:5])
 	for i := 8; i > shift; i-- {
-		tmp = bitstream.Shift(tmp)
+		tmp = bitstream.ShiftRight(tmp)
 	}
 	return binary.BigEndian.Uint32(tmp[1:5])
 }
@@ -190,10 +190,15 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		}
 		return sc.handleEOF(buf)
 	}
-	sc.buf = make([]byte, byteOffset+1)
-	copy(sc.buf, buf[:byteOffset+1])
+	sz := byteOffset
+	if bitOffset > 0 {
+		sz++
+	}
+	sc.buf = make([]byte, sz)
+	copy(sc.buf, buf[:sz])
 	sc.bufBitOffset = sc.prevBitOffset
 	sc.bufBitSize = (byteOffset * 8) + bitOffset
+
 	sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
 	if sc.prevBitOffset > 0 {
 		sc.bufBitSize -= sc.prevBitOffset
@@ -252,7 +257,7 @@ func (sc *Scanner) StreamCRC() uint32 {
 
 // Blocks returns the current block and the bitoffset into that block
 // at which the data starts as well as the crc
-func (sc *Scanner) Block() (buf []byte, bitOffsize, sizeInBits int, crc uint32) {
+func (sc *Scanner) Block() (buf []byte, bitOffset, sizeInBits int, crc uint32) {
 	return sc.buf, sc.bufBitOffset, sc.bufBitSize, sc.blockCRC
 }
 
