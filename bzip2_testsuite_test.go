@@ -101,10 +101,8 @@ func TestBzip2Tests(t *testing.T) {
 				t.Errorf("%v: missing or wrong error: got %v: want: %v", tc.filename, err, tc.err)
 			}
 			continue
-		} else {
-			if err != nil {
-				t.Errorf("%v: %v", tc.filename, err)
-			}
+		} else if err != nil {
+			t.Errorf("%v: %v", tc.filename, err)
 		}
 		if got, want := fmt.Sprintf("%02x", h.Sum(nil)), tc.md5; got != want {
 			t.Errorf("%v: got %v, want %v", tc.filename, got, want)
