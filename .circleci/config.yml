@@ -7,6 +7,7 @@ jobs:
       - run:
           name: test
           command: |
+            sudo apt-get update && sudo apt-get install -y ca-certificates
             go test -failfast --covermode=atomic -race ./...
 
   lint:
