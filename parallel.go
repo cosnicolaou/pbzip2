@@ -148,11 +148,11 @@ func (dc *Decompressor) trace(format string, args ...interface{}) {
 	}
 }
 
-func (block *blockDesc) decompress() {
+func (b *blockDesc) decompress() {
 	start := time.Now()
-	rd := bzip2.NewBlockReader(block.bzipBlockSize, block.block, block.offset)
-	block.data, block.err = ioutil.ReadAll(rd)
-	block.duration = time.Since(start)
+	rd := bzip2.NewBlockReader(b.bzipBlockSize, b.block, b.offset)
+	b.data, b.err = ioutil.ReadAll(rd)
+	b.duration = time.Since(start)
 }
 
 func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out chan<- *blockDesc) {
@@ -234,16 +234,6 @@ func (h *blockHeap) Pop() interface{} {
 	x := old[n-1]
 	*h = old[0 : n-1]
 	return x
-}
-
-func prettyPrintBlock(block []byte) {
-	for i := 0; i < len(block); i++ {
-		if i > 0 && (i%32 == 0) {
-			fmt.Println()
-		}
-		fmt.Printf("%02x ", block[i])
-	}
-	fmt.Println()
 }
 
 // tryMergeBlocks attempts to merge two consecutive blocks in the hope that

@@ -19,8 +19,7 @@ jobs:
           name: downloads
           command: |
             curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
-      - run:idcjjgrnrvhl
-      
+      - run:
           name: lint
           command: |
             golangci-lint run ./...
