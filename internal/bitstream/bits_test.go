@@ -243,3 +243,80 @@ func TestFindTrailer(t *testing.T) {
 		end = 11
 	}
 }
+
+var (
+	ones = []string{
+		"[00000000 11111111 11111111 11111111 00000000 00000000]",
+		"[00000000 01111111 11111111 11111111 10000000 00000000]",
+		"[00000000 00111111 11111111 11111111 11000000 00000000]",
+		"[00000000 00011111 11111111 11111111 11100000 00000000]",
+		"[00000000 00001111 11111111 11111111 11110000 00000000]",
+		"[00000000 00000111 11111111 11111111 11111000 00000000]",
+		"[00000000 00000011 11111111 11111111 11111100 00000000]",
+		"[00000000 00000001 11111111 11111111 11111110 00000000]",
+	}
+	zereos = []string{
+		"[11111111 00000000 00000000 00000000 11111111 11111111]",
+		"[11111111 10000000 00000000 00000000 01111111 11111111]",
+		"[11111111 11000000 00000000 00000000 00111111 11111111]",
+		"[11111111 11100000 00000000 00000000 00011111 11111111]",
+		"[11111111 11110000 00000000 00000000 00001111 11111111]",
+		"[11111111 11111000 00000000 00000000 00000111 11111111]",
+		"[11111111 11111100 00000000 00000000 00000011 11111111]",
+		"[11111111 11111110 00000000 00000000 00000001 11111111]",
+	}
+)
+
+func TestOverwriteAtOffset(t *testing.T) {
+	magic := []byte{0xff, 0xff, 0xff}
+	for i := 0; i < 8; i++ {
+		buf := make([]byte, 6)
+		OverwriteAtBitOffset(buf, 8+i, magic)
+		if got, want := fmt.Sprintf("%08b", buf), ones[i]; got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	}
+
+	magic = []byte{0x00, 0x00, 0x00}
+	for i := 0; i < 8; i++ {
+		buf := make([]byte, 6)
+		for i := 0; i < len(buf); i++ {
+			buf[i] = 0xff
+		}
+		OverwriteAtBitOffset(buf, 8+i, magic)
+		if got, want := fmt.Sprintf("%08b", buf), zereos[i]; got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestBitAppend(t *testing.T) {
+
+	s := func(b ...byte) []byte {
+		return b
+	}
+
+	for i, tc := range []struct {
+		a  []byte
+		al int
+		b  []byte
+		bl int
+		r  []byte
+		rl int
+	}{
+		{s(0xff), 8, s(0xff), 8, s(0xff, 0xff), 16},
+	} {
+		wr := &BitWriter{}
+		wr.Init(tc.a, tc.al)
+		wr.Append(tc.b, 0, tc.bl)
+		r, rl := wr.Data()
+		if got, want := r, tc.r; !bytes.Equal(got, want) {
+			t.Errorf("%v: got %02b, want %02b", i, got, want)
+		}
+		if got, want := rl, tc.rl; got != want {
+			t.Errorf("%v: got %02b, want %02b", i, got, want)
+		}
+	}
+	t.Fail()
+
+}

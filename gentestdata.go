@@ -13,8 +13,8 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/cosnicolaou/pbzip2/bzip2"
 	"github.com/cosnicolaou/pbzip2/internal"
+	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
 // Seed for the pseudorandom generator, must be shared with scanner_test.go

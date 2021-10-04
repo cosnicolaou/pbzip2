@@ -201,14 +201,14 @@ func TestScan(t *testing.T) {
 		}(tc.name)
 
 		for sc.Scan(ctx) {
-			block, bitOffset, blockSize, blockCRC := sc.Block()
+			block, bitOffset, blockSizeBits, blockCRC := sc.Block()
 			// Parallel decompress.
-			dc.Decompress(sc.BlockSize(), block, bitOffset, blockCRC)
+			dc.Decompress(sc.BlockSize(), block, bitOffset, blockSizeBits, blockCRC)
 			if len(block) == 0 {
 				continue
 			}
 			crcs = append(crcs, blockCRC)
-			sizes = append(sizes, blockSize)
+			sizes = append(sizes, blockSizeBits)
 			// Synchronous scan + decompress.
 			data = synchronousBlockBzip2(t, sc, tc.name, data)
 			n++

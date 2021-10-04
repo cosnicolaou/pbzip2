@@ -122,11 +122,12 @@ func NewDecompressor(ctx context.Context, opts ...DecompressorOption) *Decompres
 }
 
 type blockDesc struct {
-	order     uint64
-	crc       uint32
-	blockSize int
-	block     []byte
-	offset    int
+	order         uint64
+	crc           uint32
+	bzipBlockSize int
+	block         []byte
+	blockSizeBits int
+	offset        int
 
 	err      error
 	data     []byte
@@ -146,6 +147,13 @@ func (dc *Decompressor) trace(format string, args ...interface{}) {
 	}
 }
 
+func (block *blockDesc) decompress() {
+	start := time.Now()
+	rd := bzip2.NewBlockReader(block.bzipBlockSize, block.block, block.offset)
+	block.data, block.err = ioutil.ReadAll(rd)
+	block.duration = time.Since(start)
+}
+
 func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out chan<- *blockDesc) {
 	for {
 		select {
@@ -154,10 +162,7 @@ func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out ch
 				return
 			}
 			dc.trace("decompressing: %s", block)
-			start := time.Now()
-			rd := bzip2.NewBlockReader(block.blockSize, block.block, block.offset)
-			block.data, block.err = ioutil.ReadAll(rd)
-			block.duration = time.Since(start)
+			block.decompress()
 			dc.trace("decompressed: %s, ch %v/%v", block, len(out), cap(out))
 			select {
 			case out <- block:
@@ -170,15 +175,16 @@ func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out ch
 }
 
 // Decompress is called for each block to be decompressed.
-func (dc *Decompressor) Decompress(blockSize int, block []byte, offset int, crc uint32) error {
+func (dc *Decompressor) Decompress(bzipBlockSize int, block []byte, offset int, sizeInBits int, crc uint32) error {
 	order := atomic.AddUint64(&dc.order, 1)
 	select {
 	case dc.workCh <- &blockDesc{
-		order:     order,
-		crc:       crc,
-		block:     block,
-		blockSize: blockSize,
-		offset:    offset,
+		order:         order,
+		crc:           crc,
+		block:         block,
+		blockSizeBits: sizeInBits,
+		bzipBlockSize: bzipBlockSize,
+		offset:        offset,
 	}:
 	case <-dc.ctx.Done():
 		return dc.ctx.Err()
@@ -229,6 +235,58 @@ func (h *blockHeap) Pop() interface{} {
 	return x
 }
 
+func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc, min *blockDesc) bool {
+	for len(*dc.heap) <= 1 {
+		select {
+		case block := <-ch:
+			if block == nil {
+				// channel has been closed.
+				return false
+			}
+			heap.Push(dc.heap, block)
+		case <-ctx.Done():
+			err := ctx.Err()
+			dc.trace("tryMergeBlocks: %v", err)
+			dc.pwr.CloseWithError(err)
+			return false
+		}
+	}
+	fmt.Printf("merging: %v\n", min)
+	if len(*dc.heap) > 1 {
+		next := (*dc.heap)[1]
+		merged := &blockDesc{
+			order: min.order,
+			crc:   min.crc,
+			blockSizeBits: min.blockSizeBits +
+				(len(blockMagic) * 8) +
+				next.blockSizeBits,
+			bzipBlockSize: min.bzipBlockSize,
+			offset:        min.offset,
+		}
+		m := make([]byte, 0, len(min.block)+len(next.block)+len(blockMagic))
+
+		m = append(m, min.block...)
+		m = append(m, blockMagic[:]...)
+		m = append(m, next.block...)
+
+		merged.block = m
+		fmt.Printf("NEW: L: %v\n", len(m))
+		merged.decompress()
+		if merged.err != nil {
+			fmt.Printf("WTF..... %v\n", merged.err)
+			return false
+		}
+		fmt.Printf("ELSE..... all good...\n")
+
+		// merge succeeded, remove the block that was merged into the
+		// top of the heap from the heap.
+		(*dc.heap)[0] = merged
+		heap.Remove(dc.heap, 1)
+		return true
+	}
+	return false
+}
+
 func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 	defer dc.pwr.Close()
 	expected := uint64(1)
@@ -239,17 +297,18 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 			dc.trace("assemble: %v", block)
 			if block != nil {
 				heap.Push(dc.heap, block)
-				fmt.Printf("Assemble: New: %v: %v\n", block.order, block.err)
 			}
 			for len(*dc.heap) > 0 {
 				min := (*dc.heap)[0]
 				if min.order != expected {
 					break
 				}
-				fmt.Printf("Assemble: Min: %v: %v\n", min.order, min.err)
 				if err := min.err; err != nil {
-					dc.pwr.CloseWithError(err)
-					return
+					if !dc.tryMergeBlocks(ctx, ch, min) {
+						dc.pwr.CloseWithError(err)
+						return
+					}
+					min = (*dc.heap)[0]
 				}
 				if _, err := dc.pwr.Write(min.data); err != nil {
 					dc.pwr.CloseWithError(err)
@@ -275,6 +334,7 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 			err := ctx.Err()
 			dc.trace("assemble: %v", err)
 			dc.pwr.CloseWithError(err)
+			return
 		}
 	}
 }

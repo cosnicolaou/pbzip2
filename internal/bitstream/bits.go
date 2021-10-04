@@ -178,3 +178,84 @@ func FindTrailingMagicAndCRC(buf []byte, trailer []byte) (crc []byte, length int
 	}
 	return nil, -1, -1
 }
+
+// OverwriteAtBitOffset overwrites the contents of buf with value
+// starting at the specified bit offset.
+func OverwriteAtBitOffset(buf []byte, offset int, value []byte) {
+	byteOffset := offset / 8
+	bitOffset := offset % 8
+	if bitOffset == 0 {
+		copy(buf[byteOffset:], value)
+		return
+	}
+
+	shiftedValue := make([]byte, len(value)+1)
+	copy(shiftedValue, value)
+	for s := 0; s < bitOffset; s++ {
+		shiftedValue = Shift(shiftedValue)
+	}
+
+	lastByteOffset := byteOffset + len(value)
+
+	firstByteMask := uint8(0xff) << (8 - bitOffset)
+	lastByteMask := uint8(0xff) >> bitOffset
+	firstByte := buf[byteOffset] & firstByteMask
+	firstByte |= shiftedValue[0]
+	buf[byteOffset] = firstByte
+	copy(buf[byteOffset+1:], shiftedValue[1:len(shiftedValue)-1])
+	lastByte := buf[lastByteOffset] & lastByteMask
+	lastByte |= shiftedValue[len(shiftedValue)-1]
+	buf[lastByteOffset] = lastByte
+}
+
+type BitWriter struct {
+	buf       []byte
+	lenInBits int
+}
+
+func (bw *BitWriter) Init(data []byte, lenBits int) {
+	bw.buf = make([]byte, len(data))
+	copy(bw.buf, data)
+	bw.lenInBits = lenBits
+}
+
+// Shift right to align with the next byte boundary, making
+// sure to allow for enough for room for the trailing bits when
+// shifting.
+func copyAndShift(n int, data []byte, lenInBits int) []byte {
+	padded := make([]byte, len(data)+1)
+	copy(padded, data)
+	for i := 0; i < n; i++ {
+		Shift(padded)
+	}
+	return padded
+}
+
+func (bw *BitWriter) Append(data []byte, offsetBits, lenBits int) {
+	trailing := bw.lenInBits % 8
+	if trailing == 0 {
+		if offsetBits > 0 {
+			data = copyAndShift(8-offsetBits, data, lenBits)
+		}
+		bw.buf = append(bw.buf, data...)
+		bw.lenInBits += lenBits
+		return
+	}
+
+	// Shift data right so that aligns with the trailing bits
+	overlapShift := trailing - offsetBits
+	data = copyAndShift(overlapShift, data, lenBits)
+	trailingMask := uint8(0xff) << (8 - trailing)
+	leadingMask := uint8(0xff) >> trailing
+
+	overlap := bw.buf[len(bw.buf)-1] & trailingMask
+	overlap |= data[0] & leadingMask
+
+	bw.buf[len(bw.buf)-1] = overlap
+	bw.buf = append(bw.buf, data[1:]...)
+	bw.lenInBits += lenBits
+}
+
+func (bw *BitWriter) Data() ([]byte, int) {
+	return bw.buf, bw.lenInBits
+}
