@@ -1,3 +1,7 @@
+// Copyright 2019 Cosmos Nicolaou. All rights reserved.
+// Use of this source code is governed by the Apache-2.0
+// license that can be found in the LICENSE file.
+
 package bzip2
 
 import (
@@ -6,6 +10,18 @@ import (
 	"io"
 )
 
+var (
+	// FileMagic is the bzip2 file magic number.
+	FileMagic = []byte{0x42, 0x5a} // "BZ"
+
+	// BlockMagic is the magic number for each bzip data block.
+	BlockMagic = [6]byte{0x31, 0x41, 0x59, 0x26, 0x53, 0x59}
+
+	// EOSMagic is the magic number for each bzip end of stream block.
+	EOSMagic = [6]byte{0x17, 0x72, 0x45, 0x38, 0x50, 0x90}
+)
+
+// BlockReader represents an io.Reader that can read a single bzip2 block.
 type BlockReader struct {
 	underlying *reader
 	first      bool

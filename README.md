@@ -7,6 +7,16 @@ uses a modified version of `compress/bzip2` to decompress each block. The
 decompressed blocks are then reassembled into their original order and made
 available as a stream (via io.Readere).
 
+The API to use the parallel decompressor is simple:
+
+```go
+	input, err := os.Open(filepath.Join("testdata", "hello_world.bz2"))
+	if err != nil {
+		panic(err)
+	}
+	io.Copy(os.Stdout, bzip2.NewReader(input))
+```
+
 The scanner identifies blocks by searching for the magic numbers that denote
 the start of a block and the end of the file. Consequently it will be fooled
 if these 6 byte sequences occur in the compressed data but the probability of

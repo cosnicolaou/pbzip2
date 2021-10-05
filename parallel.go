@@ -1,6 +1,7 @@
 // Copyright 2020 Cosmos Nicolaou. All rights reserved.
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
+
 package pbzip2
 
 import (
@@ -15,8 +16,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cosnicolaou/pbzip2/bzip2"
+	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
+
+var numDecompressionGoRoutines int64
 
 func updateStreamCRC(streamCRC, blockCRC uint32) uint32 {
 	return (streamCRC<<1 | streamCRC>>31) ^ blockCRC
@@ -103,13 +106,17 @@ func NewDecompressor(ctx context.Context, opts ...DecompressorOption) *Decompres
 	dc.doneWg.Add(1)
 	for i := 0; i < o.concurrency; i++ {
 		go func() {
+			atomic.AddInt64(&numDecompressionGoRoutines, 1)
 			dc.worker(ctx, dc.workCh, dc.doneCh)
 			dc.workWg.Done()
+			atomic.AddInt64(&numDecompressionGoRoutines, -1)
 		}()
 	}
 	go func() {
+		atomic.AddInt64(&numDecompressionGoRoutines, 1)
 		dc.assemble(ctx, dc.doneCh)
 		dc.doneWg.Done()
+		atomic.AddInt64(&numDecompressionGoRoutines, -1)
 	}()
 	return dc
 }
@@ -179,19 +186,27 @@ func (dc *Decompressor) Decompress(blockSize int, block []byte, offset int, crc 
 	return nil
 }
 
-// Finish must be called to wait for all of the currently outstanding decompression
-// processes to finish and their output to be reassembled.
-func (dc *Decompressor) Finish() (uint32, error) {
+// Cancel can be called to unblock any readers that are reading from
+// this decompressor and/or the Finish method.
+func (dc *Decompressor) Cancel(err error) {
+	dc.pwr.CloseWithError(err)
+}
+
+// Finish must be called to wait for all of the currently outstanding
+// decompression processes to finish and their output to be reassembled.
+// It should be called exactly once.
+func (dc *Decompressor) Finish() (crc uint32, err error) {
 	select {
 	case <-dc.ctx.Done():
-		return 0, dc.ctx.Err()
+		err = dc.ctx.Err()
 	default:
 	}
 	close(dc.workCh)
 	dc.workWg.Wait()
 	close(dc.doneCh)
 	dc.doneWg.Wait()
-	return dc.streamCRC, nil
+	crc = dc.streamCRC
+	return
 }
 
 type blockHeap []*blockDesc
@@ -255,14 +270,11 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 				return
 			}
 		case <-ctx.Done():
-			dc.trace("assemble: %v", ctx.Err())
+			err := ctx.Err()
+			dc.trace("assemble: %v", err)
+			dc.pwr.CloseWithError(err)
 		}
 	}
-}
-
-// Reader returns an io.Reader for reading the decompressed stream.
-func (dc *Decompressor) Reader() io.Reader {
-	return dc.prd
 }
 
 // Read implements io.Reader on the decompressed stream.
