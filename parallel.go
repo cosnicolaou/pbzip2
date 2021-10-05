@@ -109,15 +109,15 @@ func NewDecompressor(ctx context.Context, opts ...DecompressorOption) *Decompres
 		go func() {
 			atomic.AddInt64(&numDecompressionGoRoutines, 1)
 			dc.worker(ctx, dc.workCh, dc.doneCh)
-			dc.workWg.Done()
 			atomic.AddInt64(&numDecompressionGoRoutines, -1)
+			dc.workWg.Done()
 		}()
 	}
 	go func() {
 		atomic.AddInt64(&numDecompressionGoRoutines, 1)
 		dc.assemble(ctx, dc.doneCh)
-		dc.doneWg.Done()
 		atomic.AddInt64(&numDecompressionGoRoutines, -1)
+		dc.doneWg.Done()
 	}()
 	return dc
 }
