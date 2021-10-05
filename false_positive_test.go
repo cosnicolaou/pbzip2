@@ -1,3 +1,7 @@
+// Copyright 2021 Cosmos Nicolaou. All rights reserved.
+// Use of this source code is governed by the Apache-2.0
+// license that can be found in the LICENSE file.
+
 package pbzip2_test
 
 import (
@@ -32,6 +36,7 @@ func TestHandlingFalsePositives(t *testing.T) {
 		{0xed, 0xbb, 0x7a, 0x1b, 0xda, 0xf7, 0x27, 0x57},
 	} {
 
+		// Test with shifted values of the magic numbers above.
 		for s := 0; s < 8; s++ {
 			data := make([]byte, len(origData))
 			copy(data, origData)
