@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,7 +20,12 @@ import (
 )
 
 func gitcloneTestsuite(tmpdir string) error {
-	cmd := exec.Command("git", "clone", "https://sourceware.org/git/bzip2-tests.git")
+	opts := []string{"clone"}
+	if runtime.GOOS == "windows" {
+		opts = append(opts, "--config", "core.autocrlf=input")
+	}
+	opts = append(opts, "https://sourceware.org/git/bzip2-tests.git")
+	cmd := exec.Command("git", opts...)
 	cmd.Dir = tmpdir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -80,6 +86,7 @@ func TestBzip2Tests(t *testing.T) {
 	ctx := context.Background()
 	tmpdir := t.TempDir()
 
+	tmpdir = "./foo"
 	if err := gitcloneTestsuite(tmpdir); err != nil {
 		t.Fatal(err)
 	}
