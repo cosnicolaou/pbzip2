@@ -86,7 +86,6 @@ func TestBzip2Tests(t *testing.T) {
 	ctx := context.Background()
 	tmpdir := t.TempDir()
 
-	tmpdir = "./foo"
 	if err := gitcloneTestsuite(tmpdir); err != nil {
 		t.Fatal(err)
 	}
