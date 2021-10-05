@@ -347,5 +347,39 @@ func TestBitAppend(t *testing.T) {
 			break
 		}
 	}
+}
 
+func TestScanInconsistency(t *testing.T) {
+	Init()
+	buf := make([]byte, 16)
+	copy(buf[1:], bzip2.BlockMagic[:])
+	byteOffset, bitOffset := Scan(firstBlockMagicLookup, secondBlockMagicLookup, buf)
+
+	if got, want := byteOffset, 1; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := bitOffset, 0; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	ShiftRight(buf[1:])
+	byteOffset, bitOffset = Scan(firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	if got, want := byteOffset, 1; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := bitOffset, 1; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	buf = make([]byte, 16)
+	copy(buf[1:], bzip2.BlockMagic[:])
+	ShiftRight(buf[5:])
+
+	byteOffset, bitOffset = Scan(firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	if got, want := byteOffset, -1; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := bitOffset, -1; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
 }
