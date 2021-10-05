@@ -34,24 +34,29 @@ func generateCompressedFiles(tmpdir string) (map[string]string, map[string][]byt
 		name      string
 		data      []byte
 		blockSize string
+		testdata  bool
 	}{
-		{"empty", nil, "-1"},
-		{"hello", []byte("hello world\n"), "-1"},
-		{"100KB1", internal.GenPredictableRandomData(100 * 1024), "-1"},
-		{"300KB1", internal.GenPredictableRandomData(300 * 1024), "-1"},
-		{"400KB1", internal.GenPredictableRandomData(400 * 1024), "-1"},
-		{"800KB1", internal.GenPredictableRandomData(800 * 1024), "-1"},
-		{"900KB1", internal.GenPredictableRandomData(900 * 1024), "-1"},
+		{"empty", nil, "-1", true},
+		{"hello", []byte("hello world\n"), "-1", true},
+		{"100KB1", internal.GenPredictableRandomData(100 * 1024), "-1", true},
+		{"300KB1", internal.GenPredictableRandomData(300 * 1024), "-1", true},
+		{"400KB1", internal.GenPredictableRandomData(400 * 1024), "-1", true},
+		{"800KB1", internal.GenPredictableRandomData(800 * 1024), "-1", true},
+		{"900KB1", internal.GenPredictableRandomData(900 * 1024), "-1", true},
 
-		{"300KB3_Random", internal.GenReproducibleRandomData(300 * 1024), "-3"},
-		{"900KB2_Random", internal.GenReproducibleRandomData(900 * 1024), "-2"},
-		{"1033KB4_Random", internal.GenReproducibleRandomData(1033 * 1024), "-4"},
+		{"300KB3_Random", internal.GenReproducibleRandomData(300 * 1024), "-3", false},
+		{"900KB2_Random", internal.GenReproducibleRandomData(900 * 1024), "-2", false},
+		{"1033KB4_Random", internal.GenReproducibleRandomData(1033 * 1024), "-4", false},
 	} {
-		filename := filepath.Join(tmpdir, tc.name)
-		if err := internal.CreateBzipFile(filename, tc.blockSize, tc.data); err != nil {
-			return nil, nil, err
+		if tc.testdata {
+			names[tc.name] = filepath.Join("testdata", tc.name)
+		} else {
+			filename := filepath.Join(tmpdir, tc.name)
+			if err := internal.CreateBzipFile(filename, tc.blockSize, tc.data); err != nil {
+				return nil, nil, err
+			}
+			names[tc.name] = filename
 		}
-		names[tc.name] = filename
 		data[tc.name] = tc.data
 
 	}
