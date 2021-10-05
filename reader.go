@@ -93,8 +93,8 @@ func decompress(ctx context.Context, sc *Scanner, dc *Decompressor) error {
 // to add each block to the set to decompressed.
 func scan(ctx context.Context, sc *Scanner, dc *Decompressor) error {
 	for sc.Scan(ctx) {
-		block, bitOffset, _, blockCRC := sc.Block()
-		if err := dc.Decompress(sc.BlockSize(), block, bitOffset, blockCRC); err != nil {
+		block, bitOffset, sizeBits, blockCRC := sc.Block()
+		if err := dc.Decompress(sc.BlockSize(), block, bitOffset, sizeBits, blockCRC); err != nil {
 			return err
 		}
 	}

@@ -36,10 +36,14 @@ func ScanBlockOverhead(b int) ScannerOption {
 // format.
 var (
 	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
+	blockMagic                                    [6]byte
+	eosMagic                                      [6]byte
 )
 
-func Init() {
+func init() {
 	firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init()
+	copy(blockMagic[:], bzip2.BlockMagic[:])
+	copy(eosMagic[:], bzip2.EOSMagic[:])
 }
 
 // Scanner returns runs of entire bz2 blocks. It works by splitting the input
@@ -68,7 +72,6 @@ type Scanner struct {
 
 // NewScanner returns a new instance of Scanner.
 func NewScanner(rd io.Reader, opts ...ScannerOption) *Scanner {
-	Init()
 	o := scannerOpts{
 		// Allow enough overhead for the bzip block overhead of the coding tables
 		// before the content stats.
@@ -125,7 +128,7 @@ func readCRC(block []byte, shift int) uint32 {
 	tmp := make([]byte, 5)
 	copy(tmp, block[:5])
 	for i := 8; i > shift; i-- {
-		tmp = bitstream.Shift(tmp)
+		tmp = bitstream.ShiftRight(tmp)
 	}
 	return binary.BigEndian.Uint32(tmp[1:5])
 }
@@ -166,12 +169,12 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		// end of one. Therefore the first block must be handled specially.
 		// If this is the first block, and it starts with a block magic
 		// number, discard that block magic and search for the next one.
-		if bytes.HasPrefix(buf, bzip2.BlockMagic[:]) {
-			sc.brd.Discard(len(bzip2.BlockMagic))
-			buf = buf[len(bzip2.BlockMagic):]
+		if bytes.HasPrefix(buf, blockMagic[:]) {
+			sc.brd.Discard(len(blockMagic))
+			buf = buf[len(blockMagic):]
 			sc.bufBitOffset = 0
 			sc.prevBitOffset = 0
-		} else if bytes.HasPrefix(buf, bzip2.EOSMagic[:]) {
+		} else if bytes.HasPrefix(buf, eosMagic[:]) {
 			// Handle the 'empty file/stream' case since for that
 			// there os only an EOS block.
 			return false
@@ -187,22 +190,27 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		}
 		return sc.handleEOF(buf)
 	}
-	sc.buf = make([]byte, byteOffset+1)
-	copy(sc.buf, buf[:byteOffset+1])
+	sz := byteOffset
+	if bitOffset > 0 {
+		sz++
+	}
+	sc.buf = make([]byte, sz)
+	copy(sc.buf, buf[:sz])
 	sc.bufBitOffset = sc.prevBitOffset
 	sc.bufBitSize = (byteOffset * 8) + bitOffset
+
 	sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
 	if sc.prevBitOffset > 0 {
 		sc.bufBitSize -= sc.prevBitOffset
 	}
 	sc.prevBitOffset = bitOffset
 	// skip the magic # before starting the search for the next magic #.
-	sc.brd.Discard(byteOffset + len(bzip2.BlockMagic))
+	sc.brd.Discard(byteOffset + len(blockMagic))
 	return true
 }
 
 func (sc *Scanner) handleEOF(buf []byte) bool {
-	trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(buf, bzip2.EOSMagic[:])
+	trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(buf, eosMagic[:])
 	if trailerSize == -1 {
 		sc.err = fmt.Errorf("failed to find trailer")
 		return false
@@ -249,7 +257,7 @@ func (sc *Scanner) StreamCRC() uint32 {
 
 // Blocks returns the current block and the bitoffset into that block
 // at which the data starts as well as the crc
-func (sc *Scanner) Block() (buf []byte, bitOffsize, sizeInBits int, crc uint32) {
+func (sc *Scanner) Block() (buf []byte, bitOffset, sizeInBits int, crc uint32) {
 	return sc.buf, sc.bufBitOffset, sc.bufBitSize, sc.blockCRC
 }
 
