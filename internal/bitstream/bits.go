@@ -30,9 +30,9 @@ func Init() (firstMagic, secondMagic map[uint32]uint8) {
 //       the most significant bit being the first bit, that is, it the bitstream
 //       can be visualized as flowing from left to right.
 
-// Shift shifts the contents of a  byte slice, with carry, one position
+// ShiftRight shifts the contents of a byte slice, with carry, one position
 // to the right. The carry is from the least significant bit to the most significant.
-func Shift(input []byte) []byte {
+func ShiftRight(input []byte) []byte {
 	for pos := len(input) - 1; pos >= 1; pos-- {
 		input[pos] >>= 1
 		input[pos] = (input[pos] & 0x7f) | (input[pos-1] & 0x1 << 7)
@@ -76,7 +76,7 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 			secondWordMap[binary.LittleEndian.Uint32(second[2:])] = 0
 			// shift right 8 times.
 			for s := 1; s < 8; s++ {
-				second = Shift(second)
+				second = ShiftRight(second)
 				secondWordMap[binary.LittleEndian.Uint32(second[2:])] = uint8(s)
 			}
 		}
@@ -94,7 +94,7 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 	to := 2
 	mask := uint8(0xff)
 	for shift := uint8(1); shift <= 7; shift++ {
-		first = Shift(first)
+		first = ShiftRight(first)
 		mask >>= 1
 		for j := 0; j < to; j++ {
 			first[0] = (first[0] & mask) | (byte(j) << (8 - shift))
@@ -170,11 +170,105 @@ func FindTrailingMagicAndCRC(buf []byte, trailer []byte) (crc []byte, length int
 	copy(unaligned, buf[len(buf)-11:])
 	for p := 0; p < 7; p++ {
 		// shift until all of the padding has been consumed
-		unaligned = Shift(unaligned)
+		unaligned = ShiftRight(unaligned)
 		if idx := bytes.Index(unaligned[1:], trailer); idx == 0 {
 			copy(crc, unaligned[7:11])
 			return crc, 10, (7 - p)
 		}
 	}
 	return nil, -1, -1
+}
+
+// OverwriteAtBitOffset overwrites the contents of buf with value
+// starting at the specified bit offset.
+func OverwriteAtBitOffset(buf []byte, offset int, value []byte) {
+	byteOffset := offset / 8
+	bitOffset := offset % 8
+	if bitOffset == 0 {
+		copy(buf[byteOffset:], value)
+		return
+	}
+
+	shiftedValue := make([]byte, len(value)+1)
+	copy(shiftedValue, value)
+	for s := 0; s < bitOffset; s++ {
+		shiftedValue = ShiftRight(shiftedValue)
+	}
+
+	lastByteOffset := byteOffset + len(value)
+
+	firstByteMask := uint8(0xff) << (8 - bitOffset)
+	lastByteMask := uint8(0xff) >> bitOffset
+	firstByte := buf[byteOffset] & firstByteMask
+	firstByte |= shiftedValue[0]
+	buf[byteOffset] = firstByte
+	copy(buf[byteOffset+1:], shiftedValue[1:len(shiftedValue)-1])
+	lastByte := buf[lastByteOffset] & lastByteMask
+	lastByte |= shiftedValue[len(shiftedValue)-1]
+	buf[lastByteOffset] = lastByte
+}
+
+// BitWriter can be used to create and append to a bitstream.
+type BitWriter struct {
+	buf       []byte
+	lenInBits int
+}
+
+// Init stores the initial bitstream, allowing for a hint to appropriately
+// size the underlying buffer to avoid copies.
+func (bw *BitWriter) Init(data []byte, lenBits, sizeHint int) {
+	if sizeHint == 0 {
+		sizeHint = (lenBits / 8) + 1
+	}
+	bw.buf = make([]byte, 0, sizeHint)
+	bw.buf = append(bw.buf, data...)
+	bw.lenInBits = lenBits
+}
+
+// copyAndShiftRight right to align with the next byte boundary, making
+// sure to allow for enough for room for the trailing bits when
+// shifting.
+func copyAndShiftRight(n int, data []byte, lenInBits int) []byte {
+	padded := make([]byte, len(data)+1)
+	copy(padded, data)
+	for i := 0; i < n; i++ {
+		ShiftRight(padded)
+	}
+	return padded
+}
+
+// Append appends data to the bitstream. The appended data starts
+// at offsetBits within the supplied bitSlice and is the specified number
+// of bits long.
+func (bw *BitWriter) Append(data []byte, offsetBits, lenBits int) {
+	trailing := bw.lenInBits % 8
+	if trailing == 0 {
+		if offsetBits > 0 {
+			data = copyAndShiftRight(8-offsetBits, data, lenBits)[1:]
+		}
+		bw.buf = append(bw.buf, data...)
+		bw.lenInBits += lenBits
+		return
+	}
+
+	// Shift data right so that aligns with the trailing bits
+	if overlapShift := trailing - offsetBits; overlapShift > 0 {
+		data = copyAndShiftRight(overlapShift, data, lenBits)
+	} else if overlapShift < 0 {
+		data = copyAndShiftRight(8-offsetBits+trailing, data, lenBits)[1:]
+	}
+
+	trailingMask := uint8(0xff) << (8 - trailing)
+	leadingMask := uint8(0xff) >> trailing
+
+	overlap := bw.buf[len(bw.buf)-1] & trailingMask
+	overlap |= data[0] & leadingMask
+
+	bw.buf[len(bw.buf)-1] = overlap
+	bw.buf = append(bw.buf, data[1:]...)
+	bw.lenInBits += lenBits
+}
+
+func (bw *BitWriter) Data() ([]byte, int) {
+	return bw.buf, bw.lenInBits
 }
