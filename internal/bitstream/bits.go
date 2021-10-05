@@ -16,12 +16,18 @@ import (
 // format.
 var (
 	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
+	zero                                          [256]bool
 	initOnce                                      sync.Once
 )
 
 func Init() (firstMagic, secondMagic map[uint32]uint8) {
 	initOnce.Do(func() {
 		firstBlockMagicLookup, secondBlockMagicLookup = AllShiftedValues(bzip2.BlockMagic)
+		t2 := []byte{bzip2.BlockMagic[0], bzip2.BlockMagic[1], bzip2.BlockMagic[2]}
+		for i := 0; i < 8; i++ {
+			zero[t2[1]] = true
+			Shift(t2)
+		}
 	})
 	return firstBlockMagicLookup, secondBlockMagicLookup
 }
@@ -112,18 +118,25 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 // That is, if the pattern occurs in the third byte, the byte offset will be
 // two. If the pattern starts at the 2nd bit in the third byte, the byte offset
 // is still two, and the bit offset will be 2.
-func Scan(first, second map[uint32]uint8, input []byte) (int, int) {
-	pos := 0
+func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, int) {
+	pos := 1
 	il := len(input)
 	for {
 		rpos := pos
 		if pos+4 > il {
 			break
 		}
+		// Test for part of first and part (or all) of second.
+		if !zero[input[pos]] {
+			pos++
+			continue
+		}
+		// Rewind one...
+		pos--
 		lv := binary.LittleEndian.Uint32(input[pos : pos+4])
 		shift, ok := first[lv]
 		if !ok {
-			pos++
+			pos += 2
 			continue
 		}
 		pos += 4
@@ -148,7 +161,7 @@ func Scan(first, second map[uint32]uint8, input []byte) (int, int) {
 		if s != shift {
 			log.Fatalf("internal consistency error: table indicates offset of %v, but found %v", s, shift)
 		}
-		return rpos, int(shift)
+		return rpos - 1, int(shift)
 	}
 	return -1, -1
 }

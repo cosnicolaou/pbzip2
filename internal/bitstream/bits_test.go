@@ -129,7 +129,7 @@ func shifted(shift int) []byte {
 }
 func TestFindPatterns(t *testing.T) {
 	Init()
-	for _, tc := range []struct {
+	for i, tc := range []struct {
 		buf                   []byte
 		byteOffset, bitOffset int
 	}{
@@ -145,12 +145,12 @@ func TestFindPatterns(t *testing.T) {
 		{append([]byte{0x0}, shifted(6)...), 1, 6},
 		{[]byte{0xa3, 0x14, 0x15, 0x92, 0x15, 0x94, 0x2b, 0xff, 0x31, 0x41, 0x59, 0x26, 0x53, 0x59}, 8, 0},
 	} {
-		byteOffset, bitOffset := Scan(firstBlockMagicLookup, secondBlockMagicLookup, tc.buf)
+		byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, tc.buf)
 		if got, want := byteOffset, tc.byteOffset; got != want {
-			t.Errorf("got %v, want %v", got, want)
+			t.Errorf("%d: got %v, want %v", i, got, want)
 		}
 		if got, want := bitOffset, tc.bitOffset; got != want {
-			t.Errorf("got %v, want %v", got, want)
+			t.Errorf("%d: got %v, want %v", i, got, want)
 		}
 	}
 
@@ -172,7 +172,7 @@ func TestFindPatterns(t *testing.T) {
 			buf := make([]byte, i)
 			copy(buf, filler)
 			m := insertMagic(buf, bzip2.BlockMagic[:], p)
-			byteOffset, bitOffset := Scan(firstBlockMagicLookup, secondBlockMagicLookup, m)
+			byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, m)
 			if got, want := byteOffset, p/8; got != want {
 				t.Fatalf("%v: %v: got %v, want %v", i, p, got, want)
 			}
@@ -197,7 +197,7 @@ func TestPartialFalsePositives(t *testing.T) {
 	partial[5][5] &= 0xf7
 
 	for i, p := range partial {
-		byteOffset, bitOffset := Scan(firstBlockMagicLookup, secondBlockMagicLookup, p)
+		byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, p)
 		if got, want := byteOffset, -1; got != want {
 			t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
 		}
@@ -209,7 +209,7 @@ func TestPartialFalsePositives(t *testing.T) {
 		for shift := 0; shift < 7; shift++ {
 			tmp = Shift(tmp)
 			copy(tmp[len(tmp)-6:], bzip2.BlockMagic[:])
-			byteOffset, bitOffset := Scan(firstBlockMagicLookup, secondBlockMagicLookup, tmp)
+			byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, tmp)
 			if got, want := byteOffset, len(p); got != want {
 				t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
 			}

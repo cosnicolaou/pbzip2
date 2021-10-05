@@ -36,10 +36,17 @@ func ScanBlockOverhead(b int) ScannerOption {
 // format.
 var (
 	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
+	zero                                          [256]bool
 )
 
 func Init() {
 	firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init()
+	t2 := []byte{bzip2.BlockMagic[0], bzip2.BlockMagic[1], bzip2.BlockMagic[2]}
+	for i := 0; i < 8; i++ {
+		zero[t2[1]] = true
+		bitstream.Shift(t2)
+	}
+
 }
 
 // Scanner returns runs of entire bz2 blocks. It works by splitting the input
@@ -179,7 +186,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	}
 
 	// Look for the next block magic or eof.
-	byteOffset, bitOffset := bitstream.Scan(firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	byteOffset, bitOffset := bitstream.Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, buf)
 	if byteOffset == -1 {
 		if !eof {
 			sc.err = fmt.Errorf("failed to find next block within expected max buffer size of %v", lookahead)
