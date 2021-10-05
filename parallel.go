@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cosnicolaou/pbzip2/internal/bitstream"
 	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
@@ -122,11 +123,12 @@ func NewDecompressor(ctx context.Context, opts ...DecompressorOption) *Decompres
 }
 
 type blockDesc struct {
-	order     uint64
-	crc       uint32
-	blockSize int
-	block     []byte
-	offset    int
+	order         uint64
+	crc           uint32
+	bzipBlockSize int
+	block         []byte
+	blockSizeBits int
+	offset        int
 
 	err      error
 	data     []byte
@@ -146,6 +148,13 @@ func (dc *Decompressor) trace(format string, args ...interface{}) {
 	}
 }
 
+func (b *blockDesc) decompress() {
+	start := time.Now()
+	rd := bzip2.NewBlockReader(b.bzipBlockSize, b.block, b.offset)
+	b.data, b.err = ioutil.ReadAll(rd)
+	b.duration = time.Since(start)
+}
+
 func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out chan<- *blockDesc) {
 	for {
 		select {
@@ -154,10 +163,7 @@ func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out ch
 				return
 			}
 			dc.trace("decompressing: %s", block)
-			start := time.Now()
-			rd := bzip2.NewBlockReader(block.blockSize, block.block, block.offset)
-			block.data, block.err = ioutil.ReadAll(rd)
-			block.duration = time.Since(start)
+			block.decompress()
 			dc.trace("decompressed: %s, ch %v/%v", block, len(out), cap(out))
 			select {
 			case out <- block:
@@ -170,15 +176,16 @@ func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out ch
 }
 
 // Decompress is called for each block to be decompressed.
-func (dc *Decompressor) Decompress(blockSize int, block []byte, offset int, crc uint32) error {
+func (dc *Decompressor) Decompress(bzipBlockSize int, block []byte, offset int, sizeInBits int, crc uint32) error {
 	order := atomic.AddUint64(&dc.order, 1)
 	select {
 	case dc.workCh <- &blockDesc{
-		order:     order,
-		crc:       crc,
-		block:     block,
-		blockSize: blockSize,
-		offset:    offset,
+		order:         order,
+		crc:           crc,
+		block:         block,
+		blockSizeBits: sizeInBits,
+		bzipBlockSize: bzipBlockSize,
+		offset:        offset,
 	}:
 	case <-dc.ctx.Done():
 		return dc.ctx.Err()
@@ -229,6 +236,56 @@ func (h *blockHeap) Pop() interface{} {
 	return x
 }
 
+// tryMergeBlocks attempts to merge two consecutive blocks in the hope that
+// they were split because of a false positive detection of the block magic
+// byte sequence in the payload of a block. This may happen when processing
+// very large amounts of data (eg. PB) the probability is essentially
+// that of a specific 6 byte sequence occurring randomly.
+// Merging two blocks like this means that it would take two false positives
+// within the /same/ block to defeat the code here, which given that blocks
+// are relatively small is even less likely to happen.
+func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc, min *blockDesc) bool {
+	// wait for the second consecutive block.
+	for {
+		for len(*dc.heap) < 1 {
+			select {
+			case block, ok := <-ch:
+				if !ok {
+					// channel has been closed.
+					return false
+				}
+				heap.Push(dc.heap, block)
+			case <-ctx.Done():
+				err := ctx.Err()
+				dc.trace("tryMergeBlocks: %v", err)
+				dc.pwr.CloseWithError(err)
+				return false
+			}
+		}
+		if (*dc.heap)[0].order == min.order+1 {
+			break
+		}
+	}
+	next := (*dc.heap)[0]
+	bwr := &bitstream.BitWriter{}
+	// Note that the first block has an offset in the first byte and a size in
+	// bits and hence need the sum of those to accurently reflect the size of
+	// the first block in terms of appending to it.
+	bwr.Init(min.block, min.blockSizeBits+min.offset, len(min.block)+len(next.block)+len(blockMagic)+1)
+	bwr.Append(blockMagic[:], 0, len(blockMagic)*8)
+	bwr.Append(next.block, next.offset, next.blockSizeBits)
+	min.block, min.blockSizeBits = bwr.Data()
+
+	min.decompress()
+	if min.err != nil {
+		return false
+	}
+	// The merge succeeded, remove the block that was merged from the heap.
+	heap.Remove(dc.heap, 0)
+	return true
+
+}
+
 func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 	defer dc.pwr.Close()
 	expected := uint64(1)
@@ -245,16 +302,22 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 				if min.order != expected {
 					break
 				}
+				heap.Remove(dc.heap, 0)
+				expected++
 				if err := min.err; err != nil {
-					dc.pwr.CloseWithError(err)
-					return
+					if !dc.tryMergeBlocks(ctx, ch, min) {
+						dc.pwr.CloseWithError(err)
+						return
+					}
+					// merge was successful, so bump up the next
+					// expected block number.
+					expected++
 				}
 				if _, err := dc.pwr.Write(min.data); err != nil {
 					dc.pwr.CloseWithError(err)
 					return
 				}
 				dc.streamCRC = updateStreamCRC(dc.streamCRC, min.crc)
-				heap.Remove(dc.heap, 0)
 				if dc.progressCh != nil {
 					dc.progressCh <- Progress{
 						Duration:   min.duration,
@@ -264,7 +327,6 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 						Size:       len(min.data),
 					}
 				}
-				expected++
 			}
 			if block == nil && len(*dc.heap) == 0 {
 				return
@@ -273,6 +335,7 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 			err := ctx.Err()
 			dc.trace("assemble: %v", err)
 			dc.pwr.CloseWithError(err)
+			return
 		}
 	}
 }

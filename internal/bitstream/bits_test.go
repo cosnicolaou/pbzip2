@@ -31,7 +31,9 @@ func TestBitShift(t *testing.T) {
 		{b(0b00000000, 0b00110001, 0b10011010, 0b11001010, 0b11111111, 0b11111111),
 			b(0b00000000, 0b00011000, 0b11001101, 0b01100101, 0b01111111, 0b11111111)},
 	} {
-		if got, want := Shift(tc.i), tc.o; !bytes.Equal(got, want) {
+		cpy := make([]byte, len(tc.i))
+		copy(cpy, tc.i)
+		if got, want := ShiftRight(cpy), tc.o; !bytes.Equal(got, want) {
 			t.Logf("got: %v", prbits(got))
 			t.Logf("want: %v", prbits(want))
 			t.Errorf("%v: got %08b, want %08b", i, got, want)
@@ -112,7 +114,7 @@ func insertMagic(buf, magic []byte, p int) []byte {
 	}
 	tail := buf[bytePos:]
 	for i := 1; i <= bitPos; i++ {
-		tail = Shift(tail)
+		tail = ShiftRight(tail)
 	}
 	copy(buf[bytePos:], tail)
 	buf[bytePos] = save&(uint8(0xff)<<(8-bitPos)) | (buf[bytePos] & (0xff >> bitPos))
@@ -123,7 +125,7 @@ func shifted(shift int) []byte {
 	buf := make([]byte, len(bzip2.BlockMagic)+1)
 	copy(buf, bzip2.BlockMagic[:])
 	for i := 0; i < shift; i++ {
-		buf = Shift(buf)
+		buf = ShiftRight(buf)
 	}
 	return buf
 }
@@ -207,7 +209,7 @@ func TestPartialFalsePositives(t *testing.T) {
 		tmp := make([]byte, len(p)+6)
 		copy(tmp, p)
 		for shift := 0; shift < 7; shift++ {
-			tmp = Shift(tmp)
+			tmp = ShiftRight(tmp)
 			copy(tmp[len(tmp)-6:], bzip2.BlockMagic[:])
 			byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, tmp)
 			if got, want := byteOffset, len(p); got != want {
@@ -228,7 +230,7 @@ func TestFindTrailer(t *testing.T) {
 		copy(buf, bzip2.EOSMagic[:])
 		copy(buf[6:], crc)
 		for s := 0; s < i; s++ {
-			buf = Shift(buf)
+			buf = ShiftRight(buf)
 		}
 		found, length, offset := FindTrailingMagicAndCRC(buf[:end], bzip2.EOSMagic[:])
 		if got, want := found, crc; !bytes.Equal(got, want) {
@@ -242,4 +244,108 @@ func TestFindTrailer(t *testing.T) {
 		}
 		end = 11
 	}
+}
+
+var (
+	ones = []string{
+		"[00000000 11111111 11111111 11111111 00000000 00000000]",
+		"[00000000 01111111 11111111 11111111 10000000 00000000]",
+		"[00000000 00111111 11111111 11111111 11000000 00000000]",
+		"[00000000 00011111 11111111 11111111 11100000 00000000]",
+		"[00000000 00001111 11111111 11111111 11110000 00000000]",
+		"[00000000 00000111 11111111 11111111 11111000 00000000]",
+		"[00000000 00000011 11111111 11111111 11111100 00000000]",
+		"[00000000 00000001 11111111 11111111 11111110 00000000]",
+	}
+	zereos = []string{
+		"[11111111 00000000 00000000 00000000 11111111 11111111]",
+		"[11111111 10000000 00000000 00000000 01111111 11111111]",
+		"[11111111 11000000 00000000 00000000 00111111 11111111]",
+		"[11111111 11100000 00000000 00000000 00011111 11111111]",
+		"[11111111 11110000 00000000 00000000 00001111 11111111]",
+		"[11111111 11111000 00000000 00000000 00000111 11111111]",
+		"[11111111 11111100 00000000 00000000 00000011 11111111]",
+		"[11111111 11111110 00000000 00000000 00000001 11111111]",
+	}
+)
+
+func TestOverwriteAtOffset(t *testing.T) {
+	magic := []byte{0xff, 0xff, 0xff}
+	for i := 0; i < 8; i++ {
+		buf := make([]byte, 6)
+		OverwriteAtBitOffset(buf, 8+i, magic)
+		if got, want := fmt.Sprintf("%08b", buf), ones[i]; got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	}
+
+	magic = []byte{0x00, 0x00, 0x00}
+	for i := 0; i < 8; i++ {
+		buf := make([]byte, 6)
+		for i := 0; i < len(buf); i++ {
+			buf[i] = 0xff
+		}
+		OverwriteAtBitOffset(buf, 8+i, magic)
+		if got, want := fmt.Sprintf("%08b", buf), zereos[i]; got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestBitAppend(t *testing.T) {
+
+	s := func(b ...byte) []byte {
+		return b
+	}
+
+	for i, tc := range []struct {
+		a  []byte
+		al int
+		b  []byte
+		bo int
+		bl int
+		r  []byte
+		rl int
+	}{
+		// non-byte aligned destination, byte aligned source
+		{s(0xff), 8, s(0xff), 0, 8, s(0xff, 0xff), 16},
+		{s(0xfe), 7, s(0xff), 0, 8, s(0xff, 0xfe), 15},
+		{s(0xfc), 6, s(0xff), 0, 8, s(0xff, 0xfc), 14},
+		{s(0xf8), 5, s(0xff), 0, 8, s(0xff, 0xf8), 13},
+		{s(0xf0), 4, s(0xff), 0, 8, s(0xff, 0xf0), 12},
+		{s(0xe0), 3, s(0xff), 0, 8, s(0xff, 0xe0), 11},
+		{s(0xc0), 2, s(0xff), 0, 8, s(0xff, 0xc0), 10},
+		{s(0x80), 1, s(0xff), 0, 8, s(0xff, 0x80), 9},
+		{nil, 0, s(0xff), 0, 8, s(0xff), 8},
+
+		// byte aligned destination, non byte aligned source
+		{s(0xff), 8, s(0x7f), 1, 7, s(0xff, 0xfe), 15},
+		{s(0xff), 8, s(0x3f), 2, 6, s(0xff, 0xfc), 14},
+		{s(0xff), 8, s(0x1f), 3, 5, s(0xff, 0xf8), 13},
+		{s(0xff), 8, s(0x0f), 4, 4, s(0xff, 0xf0), 12},
+		{s(0xff), 8, s(0x07), 5, 3, s(0xff, 0xe0), 11},
+		{s(0xff), 8, s(0x03), 6, 2, s(0xff, 0xc0), 10},
+		{s(0xff), 8, s(0x01), 7, 1, s(0xff, 0x80), 9},
+
+		// mix-and-match
+		{s(0xfe), 7, s(0x7f), 1, 7, s(0xff, 0xfc), 14},
+		{s(0xfe), 7, s(0x01), 7, 1, s(0xff), 8},
+		{s(0xe0), 3, s(0x01, 0xff), 7, 9, s(0xff, 0xf0), 12},
+		{s(0xe0), 1, s(0x01, 0xff), 7, 9, s(0xff, 0xc0), 10},
+	} {
+		wr := &BitWriter{}
+		wr.Init(tc.a, tc.al, 0)
+		wr.Append(tc.b, tc.bo, tc.bl)
+		r, rl := wr.Data()
+		if got, want := r, tc.r; !bytes.Equal(got, want) {
+			fmt.Printf("LEN: %v . %v .. %08b %08b\n", len(r), len(tc.r), got, want)
+			t.Errorf("%v: got %08b, want %08b", i, got, want)
+			break
+		}
+		if got, want := rl, tc.rl; got != want {
+			t.Errorf("%v: got %08b, want %08b", i, got, want)
+			break
+		}
+	}
+
 }

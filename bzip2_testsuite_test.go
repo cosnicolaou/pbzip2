@@ -93,6 +93,7 @@ func TestBzip2Tests(t *testing.T) {
 		if err != nil {
 			t.Errorf("%v: %v", tc.filename, err)
 		}
+		defer bzfile.Close()
 		rd := pbzip2.NewReader(ctx, bzfile)
 		h := md5.New()
 		_, err = io.Copy(h, rd)
