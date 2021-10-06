@@ -6,29 +6,21 @@ package bitstream
 import (
 	"bytes"
 	"encoding/binary"
-	"sync"
 )
 
 // See https://en.wikipedia.org/wiki/Bzip2 for an explanation of the file
 // format.
-var (
-	pretestBlockMagicLookup                       [256]bool
-	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
-	initOnce                                      sync.Once
-)
 
 // Init creates the three lookup tables required by Scan for the specified
 // magic value.
-func Init(magic [6]byte) (pretestBlockMagicLookup [256]bool, firstMagic, secondMagic map[uint32]uint8) {
-	initOnce.Do(func() {
-		firstBlockMagicLookup, secondBlockMagicLookup = AllShiftedValues(magic)
-		t2 := []byte{magic[0], magic[1], magic[2]}
-		for i := 0; i < 8; i++ {
-			pretestBlockMagicLookup[t2[1]] = true
-			ShiftRight(t2)
-		}
-	})
-	return pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup
+func Init(magic [6]byte) (pretestMagic [256]bool, firstMagic, secondMagic map[uint32]uint8) {
+	firstMagic, secondMagic = AllShiftedValues(magic)
+	t2 := []byte{magic[0], magic[1], magic[2]}
+	for i := 0; i < 8; i++ {
+		pretestMagic[t2[1]] = true
+		ShiftRight(t2)
+	}
+	return
 }
 
 // NOTE: bzip2 bitstreams are created by packing 8 bits into a byte with
