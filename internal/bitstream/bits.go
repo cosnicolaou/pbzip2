@@ -6,7 +6,6 @@ package bitstream
 import (
 	"bytes"
 	"encoding/binary"
-	"log"
 	"sync"
 
 	"github.com/cosnicolaou/pbzip2/internal/bzip2"
@@ -154,12 +153,11 @@ func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, i
 			nv = binary.LittleEndian.Uint32(input[pos : pos+4])
 		}
 		s, ok := second[nv]
-		if !ok {
+		if !ok || s != shift {
+			// if s != shift then one or more bits occurred between the
+			// first and second match above.
 			pos = rpos + 1
 			continue
-		}
-		if s != shift {
-			log.Fatalf("internal consistency error: table indicates offset of %v, but found %v", s, shift)
 		}
 		return rpos - 1, int(shift)
 	}

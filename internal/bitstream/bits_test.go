@@ -347,5 +347,50 @@ func TestBitAppend(t *testing.T) {
 			break
 		}
 	}
+}
+
+func TestScanInconsistency(t *testing.T) {
+	Init()
+	buf := make([]byte, 16)
+	copy(buf[1:], bzip2.BlockMagic[:])
+	byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, buf)
+
+	if got, want := byteOffset, 1; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := bitOffset, 0; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+
+	// Insert one or more bits between the first 4 and last 2 bytes of the
+	// magic number.
+	for i := 1; i <= 8; i++ {
+		buf = make([]byte, 16)
+		copy(buf[1:], bzip2.BlockMagic[:])
+		for s := 0; s < i; s++ {
+			ShiftRight(buf[5:])
+		}
+
+		byteOffset, bitOffset = Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, buf)
+		if got, want := byteOffset, -1; got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+		if got, want := bitOffset, -1; got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	}
+
+	buf = make([]byte, 30)
+	copy(buf[1:], bzip2.BlockMagic[:])
+	copy(buf[20:], bzip2.BlockMagic[:])
+	ShiftRight(buf[20:])
+	ShiftRight(buf[5:])
+	byteOffset, bitOffset = Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	if got, want := byteOffset, 20; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := bitOffset, 2; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
 
 }
