@@ -16,18 +16,12 @@ func GetNumDecompressionGoRoutines() int64 {
 }
 
 func SetCustomBlockMagic(magic [6]byte) {
-	firstBlockMagicLookup, secondBlockMagicLookup =
-		bitstream.AllShiftedValues(magic)
+	pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init(magic)
 	copy(blockMagic[:], magic[:])
-	t2 := []byte{magic[0], magic[1], magic[2]}
-	for i := 0; i < 8; i++ {
-		pretestLookup[t2[1]] = true
-		bitstream.ShiftRight(t2)
-	}
 }
 
 func ResetBlockMagic() {
-	pretestLookup, firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init()
+	pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init(bzip2.BlockMagic)
 	copy(blockMagic[:], bzip2.BlockMagic[:])
 	copy(eosMagic[:], bzip2.EOSMagic[:])
 }

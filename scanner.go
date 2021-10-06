@@ -35,14 +35,14 @@ func ScanBlockOverhead(b int) ScannerOption {
 // See https://en.wikipedia.org/wiki/Bzip2 for an explanation of the file
 // format.
 var (
-	pretestLookup                                 [256]bool
+	pretestBlockMagicLookup                       [256]bool
 	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
 	blockMagic                                    [6]byte
 	eosMagic                                      [6]byte
 )
 
 func init() {
-	pretestLookup, firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init()
+	pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init(bzip2.BlockMagic)
 	copy(blockMagic[:], bzip2.BlockMagic[:])
 	copy(eosMagic[:], bzip2.EOSMagic[:])
 }
@@ -59,7 +59,6 @@ func init() {
 type Scanner struct {
 	rd              io.Reader
 	brd             *bufio.Reader
-	eos             bool
 	err             error
 	buf             []byte
 	blockCRC        uint32
@@ -90,26 +89,6 @@ func NewScanner(rd io.Reader, opts ...ScannerOption) *Scanner {
 	return bzs
 }
 
-func (sc *Scanner) parseHeader(buf []byte) (int, error) {
-	// Validate header.
-	//	.magic:16              = 'BZ' signature/magic number
-	//	.version:8             = 'h' for Bzip2 ('H'uffman coding),
-	//                           '0' for //Bzip1 (deprecated)
-	//	.hundred_k_blocksize:8 = '1'..'9' block-size 100 kB-900 kB
-	//                           (uncompressed)
-	if !bytes.Equal(buf[0:2], bzip2.FileMagic) {
-		return -1, fmt.Errorf("wrong file magic: %x", buf[0:2])
-	}
-	if buf[2] != 'h' {
-		return -1, fmt.Errorf("wrong version: %c", buf[2])
-	}
-	if s := buf[3]; s < '0' || s > '9' {
-		return -1, fmt.Errorf("bad block size: %c", s)
-
-	}
-	return 100 * 1000 * int(buf[3]-'0'), nil
-}
-
 func (sc *Scanner) scanHeader() bool {
 	// Validate header.
 	//	.magic:16              = 'BZ' signature/magic number
@@ -126,12 +105,20 @@ func (sc *Scanner) scanHeader() bool {
 		sc.err = fmt.Errorf("stream header is too small: %v", n)
 		return false
 	}
-	sc.blockSize, sc.err = sc.parseHeader(sc.header[:])
-	if sc.err != nil {
+	if !bytes.Equal(sc.header[0:2], bzip2.FileMagic) {
+		sc.err = fmt.Errorf("wrong file magic: %x", sc.header[0:2])
 		return false
 	}
-	// Allow for maximum possible block size.
-	sc.brd = bufio.NewReaderSize(sc.rd, 9*100*1000+sc.maxPreamble)
+	if sc.header[2] != 'h' {
+		sc.err = fmt.Errorf("wrong version: %c", sc.header[2])
+		return false
+	}
+	if s := sc.header[3]; s < '0' || s > '9' {
+		sc.err = fmt.Errorf("bad block size: %c", s)
+		return false
+	}
+	sc.blockSize = 100 * 1000 * int(sc.header[3]-'0')
+	sc.brd = bufio.NewReaderSize(sc.rd, sc.blockSize+sc.maxPreamble)
 	return true
 }
 
@@ -167,10 +154,8 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		sc.first = false
 	}()
 
-	sc.eos = false
 	eof := false
 	lookahead := sc.blockSize + sc.maxPreamble
-	fmt.Printf(">>>>> %v -> %v\n", sc.blockSize, lookahead)
 	buf, err := sc.brd.Peek(lookahead)
 	if err != nil {
 		if err != io.EOF {
@@ -198,7 +183,7 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	}
 
 	// Look for the next block magic or eof.
-	byteOffset, bitOffset := bitstream.Scan(pretestLookup, firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	byteOffset, bitOffset := bitstream.Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, buf)
 	if byteOffset == -1 {
 		if !eof {
 			sc.err = fmt.Errorf("failed to find next block within expected max buffer size of %v", lookahead)
@@ -206,65 +191,10 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		}
 		return sc.handleEOF(buf)
 	}
-
 	sz := byteOffset
 	if bitOffset > 0 {
 		sz++
 	}
-
-	// Check for having skipped past an eos block.
-	// The stream format is:
-	// .magic:16
-	// .version:8
-	// .hundred_k_blocksize:8
-	// .compressed_magic:48
-	// .... data ....
-	// .eos_magic:48
-	// .crc:32
-	// .padding:0..7
-	//
-	// So if a compressed_magic has been detected and it's the start of
-	// a new stream, then the eos magic must be at most 8+8+16+[0..7]+crc
-	// bits before it.
-	//	if possibleEOSEoffset := byteOffset - (4 + 1 + 1); possibleEOSEoffset > 0 {
-	if byteOffset > 4 {
-		tbuf := buf[byteOffset-4:]
-		blockSize, err := sc.parseHeader(tbuf)
-		if err == nil {
-			trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(tbuf, eosMagic[:])
-			if trailerSize == 10 {
-				fmt.Printf("T: %v %v %v\n", trailer, trailerSize, trailerOffset)
-				//copy(sc.header[:], tbuf[:4])
-				//copy(sc.trailer[:], trailer)
-				fmt.Printf("TRAILER: %v .. %v: %02x\n", sc.trailer, eosMagic, tbuf[:12])
-				//sc.eos = true
-				//defer func() {
-				//	sc.blockSize = blockSize
-				//}()
-				_ = blockSize
-			}
-		}
-		/*
-			tbuf := buf[possibleEOSEoffset:]
-			eosByteOffset, eosBitOffset := bitstream.Scan(firstEOSMagicLookup, secondEOSMagicLookup, tbuf)
-			if eosByteOffset != -1 {
-				fmt.Printf("EOS: %v %v\n", eosByteOffset, eosBitOffset)
-				if blockSize, err := sc.parseHeader(buf[byteOffset-4:]); err != nil {
-					fmt.Printf("oops... %v: %v\n", blockSize, err)
-				} else {
-					fmt.Printf("blocksize.,.. %v\n", blockSize)
-					sc.eos = true
-					// find the CRC...
-					sc.blockCRC = readCRC(tbuf[eosBitOffset:], eosBitOffset+48)
-
-					// avoid copying the preceeding header and eos block.
-					fmt.Printf("size: %v\n", sz)
-					//sz -= 4 //+ 10 - 1 // avoid copying the preceeding header and eos block.
-				}
-
-			}*/
-	}
-
 	sc.buf = make([]byte, sz)
 	copy(sc.buf, buf[:sz])
 	sc.bufBitOffset = sc.prevBitOffset
@@ -277,7 +207,6 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	sc.prevBitOffset = bitOffset
 	// skip the magic # before starting the search for the next magic #.
 	sc.brd.Discard(byteOffset + len(blockMagic))
-
 	return true
 }
 
@@ -331,12 +260,6 @@ func (sc *Scanner) StreamCRC() uint32 {
 // at which the data starts as well as the crc
 func (sc *Scanner) Block() (buf []byte, bitOffset, sizeInBits int, crc uint32) {
 	return sc.buf, sc.bufBitOffset, sc.bufBitSize, sc.blockCRC
-}
-
-// BlockEOS returns the current block and the bitoffset into that block
-// at which the data starts as well as the crc
-func (sc *Scanner) BlockEOS() (buf []byte, bitOffset, sizeInBits int, crc uint32, eos bool) {
-	return sc.buf, sc.bufBitOffset, sc.bufBitSize, sc.blockCRC, sc.eos
 }
 
 // Err returns any error encountered by the scanner.
