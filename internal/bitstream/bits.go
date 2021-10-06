@@ -121,11 +121,11 @@ func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, i
 	pos := 1
 	il := len(input)
 	for {
-		rpos := pos
 		if pos+4 > il {
 			break
 		}
 		// Test for part of first and part (or all) of second.
+		// Rejects 31 of 32 without further checks.
 		if !zero[input[pos]] {
 			pos++
 			continue
@@ -138,6 +138,7 @@ func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, i
 			pos += 2
 			continue
 		}
+		rpos := pos + 1
 		pos += 4
 		var nv uint32
 		switch il - pos {
@@ -164,7 +165,7 @@ func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, i
 	return -1, -1
 }
 
-// FindTrailingMagic finds the magic number at the end of the bit stream
+// FindTrailingMagicAndCRC finds the magic number at the end of the bit stream
 // by working backwards to allow for up to 7 bits of trailing padding. It
 // returns the CRC that follows that trailer as 4 bytes, the number of bytes
 // in the trailer that contain only data from the trailer, and the bit offset
