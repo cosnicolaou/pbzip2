@@ -19,11 +19,20 @@ func SetCustomBlockMagic(magic [6]byte) {
 	firstBlockMagicLookup, secondBlockMagicLookup =
 		bitstream.AllShiftedValues(magic)
 	copy(blockMagic[:], magic[:])
+	t2 := []byte{magic[0], magic[1], magic[2]}
+	for i := 0; i < 8; i++ {
+		zero[t2[1]] = true
+		bitstream.ShiftRight(t2)
+	}
 }
 
 func ResetBlockMagic() {
 	firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init()
 	copy(blockMagic[:], bzip2.BlockMagic[:])
 	copy(eosMagic[:], bzip2.EOSMagic[:])
-
+	t2 := []byte{bzip2.BlockMagic[0], bzip2.BlockMagic[1], bzip2.BlockMagic[2]}
+	for i := 0; i < 8; i++ {
+		zero[t2[1]] = true
+		bitstream.ShiftRight(t2)
+	}
 }

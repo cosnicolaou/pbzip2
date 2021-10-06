@@ -277,3 +277,24 @@ func TestEmpty(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+func BenchmarkScanner(b *testing.B) {
+	input, err := ioutil.ReadFile("testdata/900KB1.bz2")
+	if err != nil {
+		b.Fatal(err)
+	}
+	buf := bytes.NewReader(input)
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.SetBytes(int64(len(input)))
+	for i := 0; i < b.N; i++ {
+		buf.Reset(input)
+		sc := pbzip2.NewScanner(buf)
+		for sc.Scan(context.Background()) {
+			sc.Block()
+		}
+		if sc.Err() != nil {
+			b.Fatal(sc.Err())
+		}
+	}
+}
