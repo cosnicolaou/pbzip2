@@ -6,29 +6,33 @@ package bitstream
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"sync"
-
-	"github.com/cosnicolaou/pbzip2/internal/bzip2"
 )
 
 // See https://en.wikipedia.org/wiki/Bzip2 for an explanation of the file
 // format.
 var (
+	pretestBlockMagicLookup                       [256]bool
 	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
-	zero                                          [256]bool
 	initOnce                                      sync.Once
 )
 
-func Init() (firstMagic, secondMagic map[uint32]uint8) {
+// Init creates the three lookup tables required by Scan for the specified
+// magic value.
+func Init(magic [6]byte) (pretestBlockMagicLookup [256]bool, firstMagic, secondMagic map[uint32]uint8) {
 	initOnce.Do(func() {
-		firstBlockMagicLookup, secondBlockMagicLookup = AllShiftedValues(bzip2.BlockMagic)
-		t2 := []byte{bzip2.BlockMagic[0], bzip2.BlockMagic[1], bzip2.BlockMagic[2]}
+		firstBlockMagicLookup, secondBlockMagicLookup = AllShiftedValues(magic)
+		t2 := []byte{magic[0], magic[1], magic[2]}
 		for i := 0; i < 8; i++ {
-			zero[t2[1]] = true
+			pretestBlockMagicLookup[t2[1]] = true
 			ShiftRight(t2)
 		}
+		fmt.Printf("XXXX %v\n", pretestBlockMagicLookup)
+
 	})
-	return firstBlockMagicLookup, secondBlockMagicLookup
+
+	return pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup
 }
 
 // NOTE: bzip2 bitstreams are created by packing 8 bits into a byte with
@@ -110,23 +114,27 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 	return
 }
 
-// Scan returns the first occurrence of the pattern matched by
-// the two lookup tables, in its input treating that input as a bitstream.
+// Scan returns the first occurrence of the pattern matched by three
+// lookup tables, in its input treating that input as a bitstream.
+// The first 'pre-test' table is used to quickly test for the possibility
+// of the magic value by testing for matches against its first/second byte
+// and carrying out the more expensive tests only if there's a match.
 // It returns the offset of the byte containing the first byte of the
 // pattern and the bit offset in that byte that the pattern starts at.
 // That is, if the pattern occurs in the third byte, the byte offset will be
 // two. If the pattern starts at the 2nd bit in the third byte, the byte offset
 // is still two, and the bit offset will be 2.
-func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, int) {
+func Scan(pretest [256]bool, first, second map[uint32]uint8, input []byte) (int, int) {
 	pos := 1
 	il := len(input)
 	for {
 		if pos+4 > il {
 			break
 		}
+
 		// Test for part of first and part (or all) of second.
 		// Rejects 31 of 32 without further checks.
-		if !zero[input[pos]] {
+		if !pretest[input[pos]] {
 			pos++
 			continue
 		}

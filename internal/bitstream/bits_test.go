@@ -64,7 +64,7 @@ func prbits(in []byte) string {
 func TestBitPatterns(t *testing.T) {
 	m0, m1, m2, m3, m4, m5 := bzip2.BlockMagic[0], bzip2.BlockMagic[1], bzip2.BlockMagic[2], bzip2.BlockMagic[3], bzip2.BlockMagic[4], bzip2.BlockMagic[5]
 
-	Init()
+	Init(bzip2.BlockMagic)
 	// Find the appropriate prefix of the first 4 bytes magic # in the
 	// lookup table for the first 4 bytes. The magic number must appear
 	// as a suffix (truncated to 4 bytes) in the bit patterns represented
@@ -130,7 +130,7 @@ func shifted(shift int) []byte {
 	return buf
 }
 func TestFindPatterns(t *testing.T) {
-	Init()
+	Init(bzip2.BlockMagic)
 	for i, tc := range []struct {
 		buf                   []byte
 		byteOffset, bitOffset int
@@ -147,7 +147,7 @@ func TestFindPatterns(t *testing.T) {
 		{append([]byte{0x0}, shifted(6)...), 1, 6},
 		{[]byte{0xa3, 0x14, 0x15, 0x92, 0x15, 0x94, 0x2b, 0xff, 0x31, 0x41, 0x59, 0x26, 0x53, 0x59}, 8, 0},
 	} {
-		byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, tc.buf)
+		byteOffset, bitOffset := Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, tc.buf)
 		if got, want := byteOffset, tc.byteOffset; got != want {
 			t.Errorf("%d: got %v, want %v", i, got, want)
 		}
@@ -174,7 +174,7 @@ func TestFindPatterns(t *testing.T) {
 			buf := make([]byte, i)
 			copy(buf, filler)
 			m := insertMagic(buf, bzip2.BlockMagic[:], p)
-			byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, m)
+			byteOffset, bitOffset := Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, m)
 			if got, want := byteOffset, p/8; got != want {
 				t.Fatalf("%v: %v: got %v, want %v", i, p, got, want)
 			}
@@ -187,19 +187,19 @@ func TestFindPatterns(t *testing.T) {
 }
 
 func TestPartialFalsePositives(t *testing.T) {
-	Init()
+	Init(bzip2.BlockMagic)
 	// partial patterns
 	partial := [6][]byte{}
 	for i := range partial {
 		partial[i] = make([]byte, i+1)
 		copy(partial[i], bzip2.BlockMagic[:i+1])
 	}
-	// zero out the last bit of the complete magic # so that it doesn't
+	// pretestBlockMagicLookup out the last bit of the complete magic # so that it doesn't
 	// match
 	partial[5][5] &= 0xf7
 
 	for i, p := range partial {
-		byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, p)
+		byteOffset, bitOffset := Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, p)
 		if got, want := byteOffset, -1; got != want {
 			t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
 		}
@@ -211,7 +211,7 @@ func TestPartialFalsePositives(t *testing.T) {
 		for shift := 0; shift < 7; shift++ {
 			tmp = ShiftRight(tmp)
 			copy(tmp[len(tmp)-6:], bzip2.BlockMagic[:])
-			byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, tmp)
+			byteOffset, bitOffset := Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, tmp)
 			if got, want := byteOffset, len(p); got != want {
 				t.Errorf("%v: %v: got %v, want %v", i, p, got, want)
 			}
@@ -350,10 +350,10 @@ func TestBitAppend(t *testing.T) {
 }
 
 func TestScanInconsistency(t *testing.T) {
-	Init()
+	Init(bzip2.BlockMagic)
 	buf := make([]byte, 16)
 	copy(buf[1:], bzip2.BlockMagic[:])
-	byteOffset, bitOffset := Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	byteOffset, bitOffset := Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, buf)
 
 	if got, want := byteOffset, 1; got != want {
 		t.Errorf("got %v, want %v", got, want)
@@ -371,7 +371,7 @@ func TestScanInconsistency(t *testing.T) {
 			ShiftRight(buf[5:])
 		}
 
-		byteOffset, bitOffset = Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, buf)
+		byteOffset, bitOffset = Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, buf)
 		if got, want := byteOffset, -1; got != want {
 			t.Errorf("got %v, want %v", got, want)
 		}
@@ -385,7 +385,7 @@ func TestScanInconsistency(t *testing.T) {
 	copy(buf[20:], bzip2.BlockMagic[:])
 	ShiftRight(buf[20:])
 	ShiftRight(buf[5:])
-	byteOffset, bitOffset = Scan(&zero, firstBlockMagicLookup, secondBlockMagicLookup, buf)
+	byteOffset, bitOffset = Scan(pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup, buf)
 	if got, want := byteOffset, 20; got != want {
 		t.Errorf("got %v, want %v", got, want)
 	}
