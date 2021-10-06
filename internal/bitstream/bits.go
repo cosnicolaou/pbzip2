@@ -15,20 +15,20 @@ import (
 // format.
 var (
 	firstBlockMagicLookup, secondBlockMagicLookup map[uint32]uint8
-	zero                                          [256]bool
+	pretestMagic                                  [256]bool
 	initOnce                                      sync.Once
 )
 
-func Init() (firstMagic, secondMagic map[uint32]uint8) {
+func Init() (pretestMagic [256]bool, firstMagic, secondMagic map[uint32]uint8) {
 	initOnce.Do(func() {
 		firstBlockMagicLookup, secondBlockMagicLookup = AllShiftedValues(bzip2.BlockMagic)
 		t2 := []byte{bzip2.BlockMagic[0], bzip2.BlockMagic[1], bzip2.BlockMagic[2]}
 		for i := 0; i < 8; i++ {
-			zero[t2[1]] = true
+			pretestMagic[t2[1]] = true
 			ShiftRight(t2)
 		}
 	})
-	return firstBlockMagicLookup, secondBlockMagicLookup
+	return pretestMagic, firstBlockMagicLookup, secondBlockMagicLookup
 }
 
 // NOTE: bzip2 bitstreams are created by packing 8 bits into a byte with
@@ -117,7 +117,7 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 // That is, if the pattern occurs in the third byte, the byte offset will be
 // two. If the pattern starts at the 2nd bit in the third byte, the byte offset
 // is still two, and the bit offset will be 2.
-func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, int) {
+func Scan(pretest [256]bool, first, second map[uint32]uint8, input []byte) (int, int) {
 	pos := 1
 	il := len(input)
 	for {
@@ -126,7 +126,7 @@ func Scan(zero *[256]bool, first, second map[uint32]uint8, input []byte) (int, i
 		}
 		// Test for part of first and part (or all) of second.
 		// Rejects 31 of 32 without further checks.
-		if !zero[input[pos]] {
+		if !pretest[input[pos]] {
 			pos++
 			continue
 		}
