@@ -44,11 +44,11 @@ type testfile struct {
 // files nor multiple bzip streams within a single file.
 func getBzip2Files(tmpdir string) ([]testfile, error) {
 	var exceptions = map[string]string{
-		"lbzip2/concat.bz2":             "mismatched CRCs: 451583718 != 2325361207",
-		"lbzip2/gap.bz2":                "mismatched CRCs: 904657248 != 1209588216",
-		"lbzip2/rand.bz2":               "bzip2 data invalid: deprecated randomized files",
-		"lbzip2/trash.bz2":              "failed to find trailer",
-		"commons-compress/multiple.bz2": "mismatched CRCs: 349224370 != 670534500",
+		filepath.Join("lbzip2", "concat.bz2"):             "mismatched CRCs: 451583718 != 2325361207",
+		filepath.Join("lbzip2", "gap.bz2"):                "mismatched CRCs: 904657248 != 1209588216",
+		filepath.Join("lbzip2", "rand.bz2"):               "bzip2 data invalid: deprecated randomized files",
+		filepath.Join("lbzip2", "trash.bz2"):              "failed to find trailer",
+		filepath.Join("commons-compress", "multiple.bz2"): "mismatched CRCs: 349224370 != 670534500",
 	}
 
 	files := map[string]bool{}
