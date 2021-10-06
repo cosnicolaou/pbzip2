@@ -56,14 +56,14 @@ func readAllSample(r io.Reader) ([]byte, int64, error) {
 	}
 }
 
-func validateGoRoutines(t *testing.T, start, stop, max int64) {
+func validateGoRoutines(t *testing.T, start, stop, max int64, concurrency int) {
 	_, _, line, _ := runtime.Caller(1)
 	if max <= start {
-		t.Errorf("line %v: suspicious go routine accounting", line)
+		t.Errorf("line %v: concurrency: %v, suspicious go routine accounting", line, concurrency)
 	}
 	t.Logf("max goroutines: %v", max)
 	if got, want := stop, start; got != want {
-		t.Errorf("line %v: goroutine leak: %v %v", line, got, want)
+		t.Errorf("line %v: concurrency: %v, goroutine leak: %v %v", line, concurrency, got, want)
 	}
 }
 
@@ -80,7 +80,8 @@ func TestIOReader(t *testing.T) {
 	validateGoRoutines(t,
 		ngs,
 		pbzip2.GetNumDecompressionGoRoutines(),
-		maxDecGoroutines)
+		maxDecGoroutines,
+		-1)
 }
 
 func testIOReader(t *testing.T, readAll func(io.Reader) ([]byte, error)) {
@@ -163,7 +164,8 @@ func TestCancelation(t *testing.T) {
 			validateGoRoutines(t,
 				ngs,
 				pbzip2.GetNumDecompressionGoRoutines(),
-				max)
+				max,
+				concurrency)
 
 			if err == nil || err.Error() != "context canceled" {
 				t.Errorf("expected an error or different error to the one received: %v", err)
