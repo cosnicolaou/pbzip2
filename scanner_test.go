@@ -40,9 +40,12 @@ func generateCompressedFiles(tmpdir string) (map[string]string, map[string][]byt
 		{"hello", []byte("hello world\n"), "-1", true},
 		{"100KB1", internal.GenPredictableRandomData(100 * 1024), "-1", true},
 		{"300KB1", internal.GenPredictableRandomData(300 * 1024), "-1", true},
+		{"300KB2", internal.GenPredictableRandomData(300 * 1024), "-1", true},
+		{"300KB5", internal.GenPredictableRandomData(300 * 1024), "-1", true},
 		{"400KB1", internal.GenPredictableRandomData(400 * 1024), "-1", true},
 		{"800KB1", internal.GenPredictableRandomData(800 * 1024), "-1", true},
 		{"900KB1", internal.GenPredictableRandomData(900 * 1024), "-1", true},
+		{"900KB9", internal.GenPredictableRandomData(900 * 1024), "-1", true},
 
 		{"300KB3_Random", internal.GenReproducibleRandomData(300 * 1024), "-3", false},
 		{"900KB2_Random", internal.GenReproducibleRandomData(900 * 1024), "-2", false},
@@ -158,6 +161,12 @@ func TestScan(t *testing.T) {
 		{"300KB1", 2560071082,
 			bc(984137596, 1527206082, 1102975844, 2729642890),
 			bci(806206, 806273, 806182, 61754)},
+		{"300KB2", 2500044168,
+			bc(1186819639, 410614246),
+			bci(1610269, 864548)},
+		{"300KB5", 1100438121,
+			bc(1100438121),
+			bci(2471788)},
 		{"400KB1",
 			182711008,
 			bc(984137596, 1527206082, 1102975844, 1428961015, 3572671310),
@@ -170,6 +179,10 @@ func TestScan(t *testing.T) {
 			1402104902,
 			bc(984137596, 1527206082, 1102975844, 1428961015, 4117679320, 2969657708, 1647728401, 4168645754, 360300138, 4141343228),
 			bci(806206, 806273, 806182, 806254, 806158, 806323, 806263, 806295, 806166, 177790)},
+		{"900KB9",
+			37440935,
+			bc(3811044659, 3295975360),
+			bci(7229543, 176452)},
 	} {
 		filename := bzip2Files[tc.name]
 		rd, stdlibData := openBzipFile(t, filename), readBzipFile(t, filename)

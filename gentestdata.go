@@ -29,9 +29,12 @@ func main() {
 		{"hello", []byte("hello world\n"), nil},
 		{"100KB1", internal.GenPredictableRandomData(100 * 1024), []string{"-1"}},
 		{"300KB1", internal.GenPredictableRandomData(300 * 1024), []string{"-1"}},
+		{"300KB2", internal.GenPredictableRandomData(300 * 1024), []string{"-2"}},
+		{"300KB5", internal.GenPredictableRandomData(300 * 1024), []string{"-5"}},
 		{"400KB1", internal.GenPredictableRandomData(400 * 1024), []string{"-1"}},
 		{"800KB1", internal.GenPredictableRandomData(800 * 1024), []string{"-1"}},
 		{"900KB1", internal.GenPredictableRandomData(900 * 1024), []string{"-1"}},
+		{"900KB9", internal.GenPredictableRandomData(900 * 1024), []string{"-9"}},
 	} {
 		raw, bz2 := tc.name, tc.name+".bz2"
 		os.Remove(raw)

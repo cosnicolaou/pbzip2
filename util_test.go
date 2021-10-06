@@ -25,5 +25,4 @@ func ResetBlockMagic() {
 	firstBlockMagicLookup, secondBlockMagicLookup = bitstream.Init()
 	copy(blockMagic[:], bzip2.BlockMagic[:])
 	copy(eosMagic[:], bzip2.EOSMagic[:])
-
 }
