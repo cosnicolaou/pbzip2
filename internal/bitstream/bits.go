@@ -6,7 +6,6 @@ package bitstream
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"sync"
 )
 
@@ -28,10 +27,7 @@ func Init(magic [6]byte) (pretestBlockMagicLookup [256]bool, firstMagic, secondM
 			pretestBlockMagicLookup[t2[1]] = true
 			ShiftRight(t2)
 		}
-		fmt.Printf("XXXX %v\n", pretestBlockMagicLookup)
-
 	})
-
 	return pretestBlockMagicLookup, firstBlockMagicLookup, secondBlockMagicLookup
 }
 
