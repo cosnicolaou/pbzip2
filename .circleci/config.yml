@@ -48,5 +48,4 @@ workflows:
     jobs:
       - test-linux
       - test-windows
-      - test-macos
       - lint
