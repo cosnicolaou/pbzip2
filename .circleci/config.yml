@@ -29,24 +29,6 @@ jobs:
           command: |
             go test -failfast --covermode=atomic -race ./...
 
-  test-macos:
-    macos:
-      xcode: 11.4.1
-    environment:
-      GOPATH: /Users/distiller/go
-      PATH: /Users/distiller/go/bin:/usr/local/go/bin:/usr/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-    steps:
-      - checkout
-      - run:
-          name: install
-          command: |
-            curl -sSL https://golang.org/dl/go<< pipeline.parameters.go >>.darwin-amd64.tar.gz | sudo tar -xzf - -C /Users/distiller/go
-            sudo chown ${USER}:admin /Users/distiller/go/go
-      - run:
-          name: test
-          command: |
-            go test -failfast --covermode=atomic -race ./...
-
   lint:
     docker:
       - image: cimg/go:<< pipeline.parameters.go >>
