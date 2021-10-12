@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/cosnicolaou/pbzip2/internal/bitstream"
 	"github.com/cosnicolaou/pbzip2/internal/bzip2"
@@ -57,18 +58,15 @@ func init() {
 // is validated and consumed. The last block will be the stream trailer
 // and this is also consumed and validated internally.
 type Scanner struct {
-	rd              io.Reader
-	brd             *bufio.Reader
-	err             error
-	buf             []byte
-	blockCRC        uint32
-	bufBitSize      int
-	bufBitOffset    int
-	prevBitOffset   int
-	first, done     bool
-	header, trailer [4]byte
-	blockSize       int
-	maxPreamble     int
+	rd                     io.Reader
+	brd                    *bufio.Reader
+	eos                    bool
+	err                    error
+	block                  CompressedBlock
+	prevBitOffset          int
+	first, done            bool
+	maxPreamble            int
+	currentStreamBlockSize int
 }
 
 // NewScanner returns a new instance of Scanner.
@@ -89,6 +87,26 @@ func NewScanner(rd io.Reader, opts ...ScannerOption) *Scanner {
 	return bzs
 }
 
+func parseHeader(buf []byte) (int, error) {
+	// Validate header.
+	//	.magic:16              = 'BZ' signature/magic number
+	//	.version:8             = 'h' for Bzip2 ('H'uffman coding),
+	//                           '0' for //Bzip1 (deprecated)
+	//	.hundred_k_blocksize:8 = '1'..'9' block-size 100 kB-900 kB
+	//                           (uncompressed)
+	if !bytes.Equal(buf[0:2], bzip2.FileMagic) {
+		return -1, fmt.Errorf("wrong file magic: %x", buf[0:2])
+	}
+	if buf[2] != 'h' {
+		return -1, fmt.Errorf("wrong version: %c", buf[2])
+	}
+	if s := buf[3]; s < '0' || s > '9' {
+		return -1, fmt.Errorf("bad block size: %c", s)
+
+	}
+	return 100 * 1000 * int(buf[3]-'0'), nil
+}
+
 func (sc *Scanner) scanHeader() bool {
 	// Validate header.
 	//	.magic:16              = 'BZ' signature/magic number
@@ -96,7 +114,8 @@ func (sc *Scanner) scanHeader() bool {
 	//                           '0' for //Bzip1 (deprecated)
 	//	.hundred_k_blocksize:8 = '1'..'9' block-size 100 kB-900 kB
 	//                           (uncompressed)
-	n, err := sc.rd.Read(sc.header[:])
+	var header [4]byte
+	n, err := sc.rd.Read(header[:])
 	if err != nil {
 		sc.err = fmt.Errorf("failed to read stream header: %v", err)
 		return false
@@ -105,20 +124,12 @@ func (sc *Scanner) scanHeader() bool {
 		sc.err = fmt.Errorf("stream header is too small: %v", n)
 		return false
 	}
-	if !bytes.Equal(sc.header[0:2], bzip2.FileMagic) {
-		sc.err = fmt.Errorf("wrong file magic: %x", sc.header[0:2])
+	sc.currentStreamBlockSize, sc.err = parseHeader(header[:])
+	if sc.err != nil {
 		return false
 	}
-	if sc.header[2] != 'h' {
-		sc.err = fmt.Errorf("wrong version: %c", sc.header[2])
-		return false
-	}
-	if s := sc.header[3]; s < '0' || s > '9' {
-		sc.err = fmt.Errorf("bad block size: %c", s)
-		return false
-	}
-	sc.blockSize = 100 * 1000 * int(sc.header[3]-'0')
-	sc.brd = bufio.NewReaderSize(sc.rd, sc.blockSize+sc.maxPreamble)
+	// Allow for maximum possible block size.
+	sc.brd = bufio.NewReaderSize(sc.rd, 9*100*1000+sc.maxPreamble)
 	return true
 }
 
@@ -154,8 +165,9 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		sc.first = false
 	}()
 
+	sc.eos = false
 	eof := false
-	lookahead := sc.blockSize + sc.maxPreamble
+	lookahead := 9*100*1000 + sc.maxPreamble
 	buf, err := sc.brd.Peek(lookahead)
 	if err != nil {
 		if err != io.EOF {
@@ -173,12 +185,8 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 		if bytes.HasPrefix(buf, blockMagic[:]) {
 			sc.brd.Discard(len(blockMagic))
 			buf = buf[len(blockMagic):]
-			sc.bufBitOffset = 0
+			sc.block.BitOffset = 0
 			sc.prevBitOffset = 0
-		} else if bytes.HasPrefix(buf, eosMagic[:]) {
-			// Handle the 'empty file/stream' case since for that
-			// there os only an EOS block.
-			return false
 		}
 	}
 
@@ -189,77 +197,201 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 			sc.err = fmt.Errorf("failed to find next block within expected max buffer size of %v", lookahead)
 			return false
 		}
+		buf, _ := trimTrailingEmptyFiles(buf)
+		// Note that if the stream is somehow corrupted and we don't find any
+		// empty files here then the stream checksum check will fail or the
+		// trailer won't be correctly located.
 		return sc.handleEOF(buf)
+	}
+
+	if bitOffset == 0 {
+		// If an EOS magic number was skipped, the bitoffset must be zero
+		// since the stream has ended.
+		if ok := sc.skippedEOS(buf, byteOffset, bitOffset); ok {
+			return true
+		}
 	}
 	sz := byteOffset
 	if bitOffset > 0 {
 		sz++
 	}
-	sc.buf = make([]byte, sz)
-	copy(sc.buf, buf[:sz])
-	sc.bufBitOffset = sc.prevBitOffset
-	sc.bufBitSize = (byteOffset * 8) + bitOffset
-
-	sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
-	if sc.prevBitOffset > 0 {
-		sc.bufBitSize -= sc.prevBitOffset
-	}
+	sc.initBlockValues(false, buf, sz, (byteOffset*8)+bitOffset-sc.prevBitOffset, 0)
 	sc.prevBitOffset = bitOffset
 	// skip the magic # before starting the search for the next magic #.
 	sc.brd.Discard(byteOffset + len(blockMagic))
 	return true
 }
 
-func (sc *Scanner) handleEOF(buf []byte) bool {
-	trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(buf, eosMagic[:])
-	if trailerSize == -1 {
-		sc.err = fmt.Errorf("failed to find trailer")
+// Check for having skipped past an EOS block.
+func (sc *Scanner) skippedEOS(buf []byte, byteOffset, bitOffset int) bool {
+	newStreamBlockSize, prevStreamCRC, consumed, trailerOffset, ok := handleSkippedEOS(buf[:byteOffset], byteOffset)
+	if !ok {
 		return false
 	}
-	copy(sc.trailer[:], trailer)
-	sc.done = true
-	sc.buf = make([]byte, len(buf)-trailerSize)
-	copy(sc.buf, buf[:len(buf)-trailerSize])
-	sc.bufBitOffset = sc.prevBitOffset
-	sc.bufBitSize = (len(sc.buf) * 8)
-	if trailerOffset > 0 {
-		sc.bufBitSize += -8 + trailerOffset
+	szBits := ((byteOffset - consumed) * 8) + trailerOffset - sc.prevBitOffset
+	szBytes := szBits / 8
+	if szBits%8 != 0 {
+		szBytes++
 	}
-	sc.blockCRC = readCRC(sc.buf, sc.bufBitOffset)
 	if sc.prevBitOffset > 0 {
-		sc.bufBitSize -= sc.prevBitOffset
+		szBytes++
 	}
+	// Note that size in bites needs to be the size of the previous
+	// compressed block up to the EOS trailer and hence needs to take
+	// the trailer offset into account.
+	sc.initBlockValues(true, buf, szBytes, szBits, prevStreamCRC)
+	sc.currentStreamBlockSize = newStreamBlockSize
+	sc.prevBitOffset = bitOffset
+
+	// skip the magic # before starting the search for the next magic #.
+	sc.brd.Discard(byteOffset + len(blockMagic))
 	return true
 }
 
-// Header returns the stream header. It can only be called after Scan has been
-// called at least once successfully.
-func (sc *Scanner) Header() []byte {
-	if sc.first {
-		return nil
+func (sc *Scanner) initBlockValues(eos bool, buf []byte, sz, szInBits int, streamCRC uint32) {
+	sc.block = CompressedBlock{}
+	sc.block.EOS = eos
+	if sz > 0 {
+		sc.block.Data = make([]byte, sz)
+		copy(sc.block.Data, buf[:sz])
+		sc.block.CRC = readCRC(buf, sc.prevBitOffset)
 	}
-	return sc.header[:]
+	sc.block.BitOffset = sc.prevBitOffset
+	sc.block.SizeInBits = szInBits
+	sc.block.StreamBlockSize = sc.currentStreamBlockSize
+	sc.block.StreamCRC = streamCRC
 }
 
-// BlockSize returns the block size being used by this stream.
-// It can onlybe called after Scan has been called at least once successfully.
-func (sc *Scanner) BlockSize() int {
-	if sc.first {
-		return 0
+// trimTrailingEmptyFiles removes a trailing run of 1 or more empty files; an empty
+// file has the following format:
+// .magic:16
+// .version:8
+// .hundred_k_blocksize:8
+// .eos_magic:48
+// .crc:32
+// .padding:0..7
+//
+// where the crc is all zeros and the hundred_k_block_size is 1..9.
+func trimTrailingEmptyFiles(buf []byte) (trimmed []byte, n int) {
+	for {
+		var ok bool
+		buf, ok = trimEmptyFile(buf)
+		if !ok {
+			return buf, n
+		}
+		n++
 	}
-	return sc.blockSize
 }
 
-// StreamCRC returns the stream CRC. It can only
-// be called after Scan has returned false and sc.Err returns no error.
-func (sc *Scanner) StreamCRC() uint32 {
-	return binary.BigEndian.Uint32(sc.trailer[:])
+func trimEmptyFile(buf []byte) ([]byte, bool) {
+	trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(buf, eosMagic[:])
+	if trailerSize != 10 || !bytes.Equal(trailer, []byte{0x0, 0x0, 0x0, 0x0}) {
+		return buf, false
+	}
+	offset := 14 // 10 bytes of trailer, plus optional padding
+	if trailerOffset > 0 {
+		offset++
+	}
+	l := len(buf)
+	if l < offset {
+		return buf, false
+	}
+	if _, err := parseHeader(buf[l-offset:]); err != nil {
+		return buf, false
+	}
+	return buf[:l-offset], true
 }
 
-// Blocks returns the current block and the bitoffset into that block
-// at which the data starts as well as the crc
-func (sc *Scanner) Block() (buf []byte, bitOffset, sizeInBits int, crc uint32) {
-	return sc.buf, sc.bufBitOffset, sc.bufBitSize, sc.blockCRC
+// Check for having skipped past an EOS block.
+//
+// The stream format is:
+// .magic:16
+// .version:8
+// .hundred_k_blocksize:8
+// .compressed_magic:48
+// .... data ....
+// .eos_magic:48
+// .crc:32
+// .padding:0..7
+//
+// If an EOS block has been skipped then the compressed block must
+// be preceded by a valid file header, zero or empty files and
+// then the EOS header. Recall that an empty file is a file
+// header followed by an EOS block with a zero CRC.
+//
+// ...EOS[<empty-file>]*<hdr><blockMagic>
+func handleSkippedEOS(buf []byte, byteOffset int) (newBlockSize int, prevCRC uint32, consumed, trailerOffset int, ok bool) {
+	if byteOffset <= 4 {
+		return
+	}
+	l := len(buf)
+	newBlockSize, err := parseHeader(buf[l-4:])
+	if err != nil {
+		return
+	}
+	trimmed, n := trimTrailingEmptyFiles(buf[:l-4])
+
+	trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(trimmed, eosMagic[:])
+	if trailerSize != 10 {
+		return
+	}
+
+	prevCRC = binary.BigEndian.Uint32(trailer)
+	// size of header, trailer, plus any empty files.
+	consumed = 4 + trailerSize + (n * 14)
+	if trailerOffset > 0 {
+		consumed++
+	}
+	ok = true
+	return
+}
+
+func (sc *Scanner) handleEOF(buf []byte) bool {
+	trailer, trailerSize, trailerOffset := bitstream.FindTrailingMagicAndCRC(buf, eosMagic[:])
+	if trailerSize != 10 {
+		sc.err = fmt.Errorf("failed to find trailer")
+		return false
+	}
+	szBytes := len(buf) - trailerSize
+	szBits := szBytes * 8
+	if trailerOffset > 0 {
+		szBits += -8 + trailerOffset
+	}
+	if sc.prevBitOffset > 0 {
+		szBits -= sc.prevBitOffset
+	}
+	sc.initBlockValues(true, buf, szBytes, szBits, binary.BigEndian.Uint32(trailer))
+	sc.done = true
+	return true
+}
+
+// CompressedBlock represents a single bzip2 compressed block.
+type CompressedBlock struct {
+	// Buffer containing compressed data as a bitstream that starts at
+	// BitOffset in the first byte of Buf and is SizeInBits large.
+	Data            []byte
+	BitOffset       int    // Compressed data starts at BitOffset in Data
+	SizeInBits      int    // SizeInBits is the size of the compressed data in Data.
+	CRC             uint32 // CRC for this block.
+	StreamBlockSize int    // StreamBlockSize is the 1..9 *100*1000 compression block size specified when the stream was created.
+
+	EOS       bool   // EOS has been detected.
+	StreamCRC uint32 // CRC
+}
+
+func (b CompressedBlock) String() string {
+	out := &strings.Builder{}
+	level := b.StreamBlockSize / (100 * 1000)
+	fmt.Fprintf(out, "@%v..%v bits: block CRC 0x%08x, bzip2 level %v", b.BitOffset, b.SizeInBits, b.CRC, -level)
+	if b.EOS {
+		fmt.Fprintf(out, " EOS: stream CRC 0x%08x", b.StreamCRC)
+	}
+	return out.String()
+}
+
+// Block returns the current block bzip2 compression block.
+func (sc *Scanner) Block() CompressedBlock {
+	return sc.block
 }
 
 // Err returns any error encountered by the scanner.

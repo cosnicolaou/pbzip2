@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"testing"
 
 	"github.com/cosnicolaou/pbzip2"
@@ -20,7 +21,7 @@ func TestHandlingFalsePositives(t *testing.T) {
 	filename := bzip2Files["300KB1"]
 
 	rd := openBzipFile(t, filename)
-	origData, err := io.ReadAll(rd)
+	origData, err := ioutil.ReadAll(rd)
 	if err != nil {
 		t.Fatal(err)
 	}

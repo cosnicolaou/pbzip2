@@ -81,7 +81,7 @@ func TestErrors(t *testing.T) {
 	}
 
 	_, out, err = pbzipCmd(corrupt)
-	if err == nil || !strings.Contains(out, "mismatched CRCs") {
+	if err == nil || !strings.Contains(out, "mismatched stream CRCs") {
 		t.Fatalf("missing or wrong error message: %v: %v", out, err)
 	}
 }

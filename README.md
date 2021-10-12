@@ -5,7 +5,7 @@ This package provides parallel and streaming decompression of bzip2 files. It
 operates by scanning the file to find each independent bzip2 block and then
 uses a modified version of `compress/bzip2` to decompress each block. The
 decompressed blocks are then reassembled into their original order and made
-available as a stream (via io.Readere).
+available as a stream (via io.Reader).
 
 The API to use the parallel decompressor is simple:
 
@@ -35,10 +35,13 @@ There are three components to this package:
 3. the modified bzip2 package
 
 The scanner operates as described above but its implementation is complicated
-by the fact that bzip blocks are bit aligned. The search for the bzip block
-magic number is therefore implemented using two lookup tables of 32 bit ints
-that contain all possible patterns that the 6 byte magic numbers could occur
-as allowing for them to be shifted 1..7 bits in the stream.
+by the fact that bzip blocks are bit aligned, the handling of concatenated
+and empty streams etc. The search for the bzip block magic number is implemented
+using three lookup tables. The first is a hash lookup of 256 values to quickly
+determine if the next byte could possibly contain the start of the magic number.
+The other two tables each consist of 32 bit ints that contain all possible
+patterns that the 6 byte magic numbers could occur as, thus allowing for them to
+be shifted 1..7 bits in the stream.
 
 The parallel decompressor accepts requests to decompress each bzip2 block
 concurrently and then reassembles them into a stream allowing for incremental

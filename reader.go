@@ -6,7 +6,6 @@ package pbzip2
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync"
 )
@@ -61,8 +60,7 @@ func NewReader(ctx context.Context, rd io.Reader, opts ...ReaderOption) io.Reade
 		wg.Done()
 	}()
 	return &reader{
-		ctx: ctx,
-		//cancel: cancel,
+		ctx:   ctx,
 		errCh: errCh,
 		dc:    dc,
 		wg:    wg,
@@ -78,23 +76,15 @@ func decompress(ctx context.Context, sc *Scanner, dc *Decompressor) error {
 		dc.Finish()
 		return err
 	}
-	crc, err := dc.Finish()
-	if err != nil {
-		return err
-	}
-	streamCRC := sc.StreamCRC()
-	if crc != streamCRC {
-		return fmt.Errorf("mismatched CRCs: %v != %v", streamCRC, crc)
-	}
-	return nil
+	return dc.Finish()
 }
 
 // scan runs the scanner against the input stream invoking the decompressor
 // to add each block to the set to decompressed.
 func scan(ctx context.Context, sc *Scanner, dc *Decompressor) error {
 	for sc.Scan(ctx) {
-		block, bitOffset, sizeBits, blockCRC := sc.Block()
-		if err := dc.Decompress(sc.BlockSize(), block, bitOffset, sizeBits, blockCRC); err != nil {
+		block := sc.Block()
+		if err := dc.Append(block); err != nil {
 			return err
 		}
 	}

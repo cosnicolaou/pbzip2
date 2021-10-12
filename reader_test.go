@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -179,7 +180,7 @@ func TestCancelation(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 	drd := pbzip2.NewReader(ctx, rd)
 	cancel()
-	_, err := io.ReadAll(drd)
+	_, err := ioutil.ReadAll(drd)
 	if err == nil || err.Error() != "context canceled" {
 		t.Errorf("expected an error or different error to the one received: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestReaderErrors(t *testing.T) {
 	ctx := context.Background()
 	rd := bytes.NewBuffer(nil)
 	drd := pbzip2.NewReader(ctx, rd)
-	_, err := io.ReadAll(drd)
+	_, err := ioutil.ReadAll(drd)
 	if err == nil || err.Error() != "failed to read stream header: EOF" {
 		t.Errorf("expected an error or different error to the one received: %v", err)
 	}
@@ -198,7 +199,7 @@ func TestReaderErrors(t *testing.T) {
 	testError := func(buf []byte, msg string) {
 		rd := bytes.NewBuffer(buf)
 		drd := pbzip2.NewReader(ctx, rd)
-		_, err = io.ReadAll(drd)
+		_, err = ioutil.ReadAll(drd)
 		if err == nil || !strings.Contains(err.Error(), msg) {
 			_, _, line, _ := runtime.Caller(1)
 			t.Errorf("line: %v expected an error or different error to the one received: %v", line, err)
@@ -206,7 +207,7 @@ func TestReaderErrors(t *testing.T) {
 	}
 
 	drd = pbzip2.NewReader(ctx, &errorReader{})
-	_, err = io.ReadAll(drd)
+	_, err = ioutil.ReadAll(drd)
 	if err == nil || !strings.Contains(err.Error(), "failed to read stream header: oops") {
 		t.Errorf("expected an error or different error to the one received: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestReaderErrors(t *testing.T) {
 	buf, l := readFile(t, "hello")
 	buf[l] = 0x1
 	buf[l-1] = 0x1
-	testError(buf, "mismatched CRCs")
+	testError(buf, "mismatched stream CRCs")
 
 	buf, l = readFile(t, "hello")
 	buf[l-4] = 0x1
