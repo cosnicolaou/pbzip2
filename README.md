@@ -1,5 +1,5 @@
 [![CircleCI](https://circleci.com/gh/cosnicolaou/pbzip2.svg?style=svg)](https://circleci.com/gh/cosnicolaou/pbzip2)
-![GithubActions](https://github.com/cosnicolaou>/pbzip2/actions/workflows/go-macos/badge.svg)
+![GithubActions](https://github.com/cosnicolaou/pbzip2/actions/workflows/macos.yml/badge.svg)
 # pbzip2
 
 This package provides parallel and streaming decompression of bzip2 files. It
