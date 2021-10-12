@@ -62,6 +62,8 @@ func BZSendUpdates(ch chan<- Progress) DecompressorOption {
 // Block method. Each block is then decompressed in parallel and reassembled
 // in the original order.
 type Decompressor struct {
+	order uint64 // must be at start of struct to be aligned.
+
 	ctx        context.Context
 	workWg     sync.WaitGroup
 	doneWg     sync.WaitGroup
@@ -70,7 +72,6 @@ type Decompressor struct {
 	progressCh chan<- Progress
 	prd        *io.PipeReader
 	pwr        *io.PipeWriter
-	order      uint64
 
 	heap      *blockHeap
 	streamCRC uint32
