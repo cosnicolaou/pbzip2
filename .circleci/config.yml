@@ -1,5 +1,10 @@
+version: 2.1
+
+orbs:
+  win: circleci/windows@2.4.1
+
 jobs:
-  test:
+  test-linux:
     docker:
       - image: cimg/go:1.17
     steps:
@@ -8,6 +13,26 @@ jobs:
           name: test
           command: |
             sudo apt-get update && sudo apt-get install -y ca-certificates
+            go test -failfast --covermode=atomic -race ./...
+
+  test-windows:
+    executor:
+      name: win/default
+    steps:
+      - checkout
+      - run:
+          name: test
+          command: |
+            go test -failfast --covermode=atomic -race ./...
+
+  test-macos:
+    macos:
+      xcode: 11.4.1
+    steps:
+      - checkout
+      - run:
+          name: test
+          command: |
             go test -failfast --covermode=atomic -race ./...
 
   lint:
@@ -24,9 +49,10 @@ jobs:
           command: |
             golangci-lint run ./...
 
-version: 2.1
 workflows:
   main:
     jobs:
-      - test
+      - test-linux
+      - test-windows
+      - test-macos
       - lint

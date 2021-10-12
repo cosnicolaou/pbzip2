@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,7 +64,7 @@ func getBzip2Files(tmpdir string) ([]testfile, error) {
 				files[path] = true
 			}
 			if base := strings.TrimSuffix(info.Name(), ".md5"); base != info.Name() {
-				buf, err := ioutil.ReadFile(path)
+				buf, err := os.ReadFile(path)
 				if err != nil {
 					return err
 				}

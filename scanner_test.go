@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -67,7 +66,7 @@ func generateCompressedFiles(tmpdir string) (map[string]string, map[string][]byt
 }
 
 func TestMain(m *testing.M) {
-	tmpdir, err := ioutil.TempDir("", "pbzip")
+	tmpdir, err := os.MkdirTemp("", "pbzip")
 	if err != nil {
 		panic(err)
 	}
@@ -87,7 +86,7 @@ func readBzipFile(t *testing.T, filename string) []byte {
 }
 
 func readFile(t *testing.T, name string) ([]byte, int) {
-	buf, err := ioutil.ReadFile(bzip2Files[name] + ".bz2")
+	buf, err := os.ReadFile(bzip2Files[name] + ".bz2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +118,7 @@ func stdlibBzip2(filename string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf, err := ioutil.ReadAll(gobzip2.NewReader(f))
+	buf, err := io.ReadAll(gobzip2.NewReader(f))
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +127,7 @@ func stdlibBzip2(filename string) ([]byte, error) {
 
 func synchronousBlockBzip2(t *testing.T, block pbzip2.CompressedBlock, name string, existing []byte) []byte {
 	rd := bzip2.NewBlockReader(block.StreamBlockSize, block.Data, block.BitOffset)
-	buf, err := ioutil.ReadAll(rd)
+	buf, err := io.ReadAll(rd)
 	if err != nil {
 		t.Errorf("%v: decompression failed: %v", name, err)
 		return nil
@@ -175,7 +174,7 @@ func testScanFile(ctx context.Context, t *testing.T, rd io.Reader, stdlibData []
 
 	pwg.Add(1)
 	go func(n string) {
-		pbuf, perr = ioutil.ReadAll(dc)
+		pbuf, perr = io.ReadAll(dc)
 		pwg.Done()
 	}(name)
 
@@ -297,7 +296,7 @@ func TestEmpty(t *testing.T) {
 }
 
 func BenchmarkScanner(b *testing.B) {
-	input, err := ioutil.ReadFile("testdata/900KB1.bz2")
+	input, err := os.ReadFile("testdata/900KB1.bz2")
 	if err != nil {
 		b.Fatal(err)
 	}

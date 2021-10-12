@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"cloudeng.io/cmdutil"
@@ -55,7 +54,7 @@ func bz2StatsFile(ctx context.Context, name string) error {
 	}, os.Interrupt)
 
 	bz2rd := bzip2.NewReaderWithStats(rd)
-	if _, err = io.Copy(ioutil.Discard, bz2rd); err != nil {
+	if _, err = io.Copy(io.Discard, bz2rd); err != nil {
 		return fmt.Errorf("failed to read: %v: %v", name, err)
 	}
 	stats := bzip2.StreamStats(bz2rd)
