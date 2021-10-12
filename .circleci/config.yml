@@ -1,13 +1,16 @@
 version: 2.1
 
+parameters:
+  go:
+    type: string
+    default: 1.17.2
 orbs:
   win: circleci/windows@2.4.1
-  golang: cci-orb/golang@0.1.20
 
 jobs:
   test-linux:
     docker:
-      - image: cimg/go:1.17
+      - image: cimg/go:<< parameters.go >>
     steps:
       - checkout
       - run:
@@ -21,25 +24,33 @@ jobs:
       name: win/default
     steps:
       - checkout
-      - go/test:
-          covermode: atomic
-          failfast: true
-          race: true
+      - run:
+          name: test
+          command: |
+            go test -failfast --covermode=atomic -race ./...
 
   test-macos:
     executor:
       name: macos
       xcode: 11.4.1
+    environment:
+      GOPATH: /Users/distiller/go
+      PATH: /Users/distiller/go/bin:/usr/local/go/bin:/usr/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
     steps:
       - checkout
-      - go/test:
-          covermode: atomic
-          failfast: true
-          race: true
+      - run:
+          name: install
+          command: |
+            curl -sSL https://golang.org/dl/go<< parameters.go >>.darwin-amd64.tar.gz | sudo tar -xzf - -C /Users/distiller/go
+            sudo chown ${USER}:admin /Users/distiller/go/go
+      - run:
+          name: test
+          command: |
+            go test -failfast --covermode=atomic -race ./...
 
   lint:
     docker:
-      - image: cimg/go:1.17
+      - image: cimg/go:<< parameters.go >>
     steps:
       - checkout
       - run:
