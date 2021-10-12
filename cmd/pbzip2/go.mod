@@ -13,12 +13,3 @@ require (
 	github.com/schollz/progressbar/v2 v2.15.0
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 )
-
-require (
-	cloudeng.io/text v0.0.8 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
-	golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1 // indirect
-	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1 // indirect
-)

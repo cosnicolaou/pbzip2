@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,15 +41,17 @@ type testfile struct {
 	err      string
 }
 
-// Note the the current implementation does not correctly handle concatenated
-// files nor multiple bzip streams within a single file.
 func getBzip2Files(tmpdir string) ([]testfile, error) {
+	// exceptions represent input files that we expect to fail with for
+	// the reasons given below.
 	var exceptions = map[string]string{
-		filepath.Join("lbzip2", "concat.bz2"):             "mismatched CRCs: 451583718 != 2325361207",
-		filepath.Join("lbzip2", "gap.bz2"):                "mismatched CRCs: 904657248 != 1209588216",
-		filepath.Join("lbzip2", "rand.bz2"):               "bzip2 data invalid: deprecated randomized files",
-		filepath.Join("lbzip2", "trash.bz2"):              "failed to find trailer",
-		filepath.Join("commons-compress", "multiple.bz2"): "mismatched CRCs: 349224370 != 670534500",
+		// The error message from bzcat differs.
+		filepath.Join("lbzip2", "gap.bz2"): "mismatched stream CRCs: calculated=0x4818d9f8 != stored=0x35ebf960",
+		// The error message from bzcat differs.
+		filepath.Join("lbzip2", "trash.bz2"): "failed to find trailer",
+		// bzcat supports the legacy randomized mode whereas the go bzip2
+		// package does not.
+		filepath.Join("lbzip2", "rand.bz2"): "bzip2 data invalid: deprecated randomized files",
 	}
 
 	files := map[string]bool{}
@@ -62,7 +65,7 @@ func getBzip2Files(tmpdir string) ([]testfile, error) {
 				files[path] = true
 			}
 			if base := strings.TrimSuffix(info.Name(), ".md5"); base != info.Name() {
-				buf, err := os.ReadFile(path)
+				buf, err := ioutil.ReadFile(path)
 				if err != nil {
 					return err
 				}
@@ -95,6 +98,7 @@ func TestBzip2Tests(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range testcases {
+		t.Logf(tc.filename)
 		bzfile, err := os.Open(tc.filename)
 		if err != nil {
 			t.Errorf("%v: %v", tc.filename, err)

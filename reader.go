@@ -6,7 +6,6 @@ package pbzip2
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync"
 )
@@ -61,23 +60,11 @@ func NewReader(ctx context.Context, rd io.Reader, opts ...ReaderOption) io.Reade
 		wg.Done()
 	}()
 	return &reader{
-		ctx: ctx,
-		//cancel: cancel,
+		ctx:   ctx,
 		errCh: errCh,
 		dc:    dc,
 		wg:    wg,
 	}
-}
-
-func handleEOS(sc *Scanner, dc *Decompressor) error {
-	crc, err := dc.Finish()
-	if err != nil {
-		return err
-	}
-	if got, want := crc, sc.StreamCRC(); got != want {
-		return fmt.Errorf("mismatched CRCs: calculated/stored: %v != %v", got, want)
-	}
-	return nil
 }
 
 // decompress guarantees that it Finish will have been called on the
@@ -89,22 +76,15 @@ func decompress(ctx context.Context, sc *Scanner, dc *Decompressor) error {
 		dc.Finish()
 		return err
 	}
-	return handleEOS(sc, dc)
+	return dc.Finish() //handleEOS(sc, dc)
 }
 
 // scan runs the scanner against the input stream invoking the decompressor
 // to add each block to the set to decompressed.
 func scan(ctx context.Context, sc *Scanner, dc *Decompressor) error {
 	for sc.Scan(ctx) {
-		block, bitOffset, sizeBits, blockCRC, eos := sc.BlockEOS()
-		if eos {
-			crc := sc.StreamCRC()
-			fmt.Printf("CRC: %v\n", crc)
-			//if err := handleEOS(sc, dc); err != nil {
-			//	return err
-			//}
-		}
-		if err := dc.Decompress(sc.BlockSize(), block, bitOffset, sizeBits, blockCRC); err != nil {
+		block := sc.Block()
+		if err := dc.Append(block); err != nil {
 			return err
 		}
 	}

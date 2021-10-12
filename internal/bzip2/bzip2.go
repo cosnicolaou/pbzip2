@@ -411,7 +411,10 @@ func (bz2 *reader) readBlock() (err error) {
 	for {
 		if decoded == 50 {
 			if selectorIndex >= numSelectors {
+				//				fmt.Printf("ERROR: %v >= %v\n", selectorIndex, numSelectors)
 				return StructuralError("insufficient selector indices for number of symbols")
+			} else {
+				//				fmt.Printf("NORMAL: %v >= %v\n", selectorIndex, numSelectors)
 			}
 			if int(treeIndexes[selectorIndex]) >= len(huffmanTrees) {
 				return StructuralError("tree selector out of range")

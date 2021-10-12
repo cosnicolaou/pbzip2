@@ -119,7 +119,6 @@ func Scan(pretest [256]bool, first, second map[uint32]uint8, input []byte) (int,
 		if pos+4 > il {
 			break
 		}
-
 		// Test for part of first and part (or all) of second.
 		// Rejects 31 of 32 without further checks.
 		if !pretest[input[pos]] {
@@ -167,15 +166,22 @@ func Scan(pretest [256]bool, first, second map[uint32]uint8, input []byte) (int,
 // in the trailer that contain only data from the trailer, and the bit offset
 // of the trailer.
 func FindTrailingMagicAndCRC(buf []byte, trailer []byte) (crc []byte, length int, offsetInBits int) {
+	l := len(buf)
+	if l < 10 {
+		return nil, -1, -1
+	}
 	crc = make([]byte, 4)
-	aligned := buf[len(buf)-10:]
+	aligned := buf[l-10:]
 	if idx := bytes.Index(aligned, trailer); idx == 0 {
 		copy(crc, aligned[6:10])
 		// 10 is 6 bits of magic and 4 of crc.
 		return crc, 10, 0
 	}
+	if l < 11 {
+		return nil, -1, -1
+	}
 	unaligned := make([]byte, 11)
-	copy(unaligned, buf[len(buf)-11:])
+	copy(unaligned, buf[l-11:])
 	for p := 0; p < 7; p++ {
 		// shift until all of the padding has been consumed
 		unaligned = ShiftRight(unaligned)

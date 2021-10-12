@@ -87,7 +87,7 @@ func readBzipFile(t *testing.T, filename string) []byte {
 }
 
 func readFile(t *testing.T, name string) ([]byte, int) {
-	buf, err := os.ReadFile(bzip2Files[name] + ".bz2")
+	buf, err := ioutil.ReadFile(bzip2Files[name] + ".bz2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,9 +126,8 @@ func stdlibBzip2(filename string) ([]byte, error) {
 	return buf, nil
 }
 
-func synchronousBlockBzip2(t *testing.T, sc *pbzip2.Scanner, name string, existing []byte) []byte {
-	block, bitOffset, _, _ := sc.Block()
-	rd := bzip2.NewBlockReader(sc.BlockSize(), block, bitOffset)
+func synchronousBlockBzip2(t *testing.T, block pbzip2.CompressedBlock, name string, existing []byte) []byte {
+	rd := bzip2.NewBlockReader(block.StreamBlockSize, block.Data, block.BitOffset)
 	buf, err := ioutil.ReadAll(rd)
 	if err != nil {
 		t.Errorf("%v: decompression failed: %v", name, err)
@@ -220,26 +219,33 @@ func TestScan(t *testing.T) {
 		}(tc.name)
 
 		for sc.Scan(ctx) {
-			block, bitOffset, blockSizeBits, blockCRC := sc.Block()
+			block := sc.Block()
 			// Parallel decompress.
-			dc.Decompress(sc.BlockSize(), block, bitOffset, blockSizeBits, blockCRC)
-			if len(block) == 0 {
+			if err := dc.Append(block); err != nil {
+				t.Fatal(err)
+			}
+			if len(block.Data) == 0 {
 				continue
 			}
-			crcs = append(crcs, blockCRC)
-			sizes = append(sizes, blockSizeBits)
+			crcs = append(crcs, block.CRC)
+			sizes = append(sizes, block.SizeInBits)
 			// Synchronous scan + decompress.
-			data = synchronousBlockBzip2(t, sc, tc.name, data)
+			data = synchronousBlockBzip2(t, block, tc.name, data)
 			n++
+			if block.EOS {
+				if got, want := block.StreamCRC, tc.streamCRC; got != want {
+					t.Errorf("%v: got %v, want %v", tc.name, got, want)
+				}
+			}
 		}
 		if err := sc.Err(); err != nil {
 			t.Errorf("%v: scan failed: %v", tc.name, err)
 			continue
 		}
 
-		if got, want := sc.StreamCRC(), tc.streamCRC; got != want {
+		/*if got, want := sc.StreamCRC(), tc.streamCRC; got != want {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
-		}
+		}*/
 
 		if got, want := crcs, tc.blockCRCs; !reflect.DeepEqual(got, want) {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
@@ -257,13 +263,13 @@ func TestScan(t *testing.T) {
 			t.Errorf("%v: got %v..., want %v...", tc.name, internal.FirstN(10, got), internal.FirstN(10, want))
 		}
 
-		crc, err := dc.Finish()
+		err := dc.Finish()
 		if err != nil {
 			t.Errorf("Finish: %v", err)
 		}
-		if got, want := crc, tc.streamCRC; got != want {
+		/*if got, want := crc, tc.streamCRC; got != want {
 			t.Errorf("%v: got %v, want %v", tc.name, got, want)
-		}
+		}*/
 		pwg.Wait()
 		if err := perr; err != nil {
 			t.Errorf("failed to read from parallel decompressor: %v", err)

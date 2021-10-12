@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -123,23 +124,20 @@ func NewDecompressor(ctx context.Context, opts ...DecompressorOption) *Decompres
 }
 
 type blockDesc struct {
-	order         uint64
-	crc           uint32
-	bzipBlockSize int
-	block         []byte
-	blockSizeBits int
-	offset        int
-
-	err      error
-	data     []byte
-	duration time.Duration
+	CompressedBlock
+	order        uint64
+	err          error
+	uncompressed []byte
+	duration     time.Duration
 }
 
 func (b *blockDesc) String() string {
 	if b == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("%v: crc %v, size %v, offset %v", b.order, b.crc, len(b.block), b.offset)
+	out := &strings.Builder{}
+	fmt.Fprintf(out, "order: %v: %v", b.order, b.CompressedBlock)
+	return out.String()
 }
 
 func (dc *Decompressor) trace(format string, args ...interface{}) {
@@ -150,8 +148,8 @@ func (dc *Decompressor) trace(format string, args ...interface{}) {
 
 func (b *blockDesc) decompress() {
 	start := time.Now()
-	rd := bzip2.NewBlockReader(b.bzipBlockSize, b.block, b.offset)
-	b.data, b.err = ioutil.ReadAll(rd)
+	rd := bzip2.NewBlockReader(b.StreamBlockSize, b.Data, b.BitOffset)
+	b.uncompressed, b.err = ioutil.ReadAll(rd)
 	b.duration = time.Since(start)
 }
 
@@ -175,17 +173,15 @@ func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out ch
 	}
 }
 
-// Decompress is called for each block to be decompressed.
-func (dc *Decompressor) Decompress(bzipBlockSize int, block []byte, offset int, sizeInBits int, crc uint32) error {
+// Append adds the supplied bzip2 block to the set to be decompressed in parallel
+// with the results of that decompression being appended to the previously
+// appended blocks.
+func (dc *Decompressor) Append(cb CompressedBlock) error {
 	order := atomic.AddUint64(&dc.order, 1)
 	select {
 	case dc.workCh <- &blockDesc{
-		order:         order,
-		crc:           crc,
-		block:         block,
-		blockSizeBits: sizeInBits,
-		bzipBlockSize: bzipBlockSize,
-		offset:        offset,
+		order:           order,
+		CompressedBlock: cb,
 	}:
 	case <-dc.ctx.Done():
 		return dc.ctx.Err()
@@ -202,7 +198,8 @@ func (dc *Decompressor) Cancel(err error) {
 // Finish must be called to wait for all of the currently outstanding
 // decompression processes to finish and their output to be reassembled.
 // It should be called exactly once.
-func (dc *Decompressor) Finish() (crc uint32, err error) {
+func (dc *Decompressor) Finish() error {
+	var err error
 	select {
 	case <-dc.ctx.Done():
 		err = dc.ctx.Err()
@@ -212,8 +209,7 @@ func (dc *Decompressor) Finish() (crc uint32, err error) {
 	dc.workWg.Wait()
 	close(dc.doneCh)
 	dc.doneWg.Wait()
-	crc = dc.streamCRC
-	return
+	return err
 }
 
 type blockHeap []*blockDesc
@@ -271,10 +267,10 @@ func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc
 	// Note that the first block has an offset in the first byte and a size in
 	// bits and hence need the sum of those to accurently reflect the size of
 	// the first block in terms of appending to it.
-	bwr.Init(min.block, min.blockSizeBits+min.offset, len(min.block)+len(next.block)+len(blockMagic)+1)
+	bwr.Init(min.Data, min.SizeInBits+min.BitOffset, len(min.Data)+len(next.Data)+len(blockMagic)+1)
 	bwr.Append(blockMagic[:], 0, len(blockMagic)*8)
-	bwr.Append(next.block, next.offset, next.blockSizeBits)
-	min.block, min.blockSizeBits = bwr.Data()
+	bwr.Append(next.Data, next.BitOffset, next.SizeInBits)
+	min.Data, min.SizeInBits = bwr.Data()
 
 	min.decompress()
 	if min.err != nil {
@@ -313,18 +309,26 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 					// expected block number.
 					expected++
 				}
-				if _, err := dc.pwr.Write(min.data); err != nil {
+				if _, err := dc.pwr.Write(min.uncompressed); err != nil {
 					dc.pwr.CloseWithError(err)
 					return
 				}
-				dc.streamCRC = updateStreamCRC(dc.streamCRC, min.crc)
+				dc.streamCRC = updateStreamCRC(dc.streamCRC, min.CRC)
+				if min.EOS {
+					if got, want := dc.streamCRC, min.StreamCRC; got != want {
+						dc.pwr.CloseWithError(fmt.Errorf("mismatched stream CRCs: calculated=0x%08x != stored=0x%08x", got, want))
+						return
+					}
+					dc.streamCRC = 0
+				}
+
 				if dc.progressCh != nil {
 					dc.progressCh <- Progress{
 						Duration:   min.duration,
 						Block:      min.order,
-						CRC:        min.crc,
-						Compressed: len(min.block),
-						Size:       len(min.data),
+						CRC:        min.CRC,
+						Compressed: len(min.Data),
+						Size:       len(min.uncompressed),
 					}
 				}
 			}

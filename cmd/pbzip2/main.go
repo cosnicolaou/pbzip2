@@ -1,6 +1,7 @@
 // Copyright 2020 Cosmos Nicolaou. All rights reserved.
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -41,6 +42,8 @@ type unzipFlags struct {
 	OutputFile  string `subcmd:"output,,'output file or s3 path, omit for stdout'"`
 }
 
+type noFlags struct{}
+
 var cmdSet *subcmd.CommandSet
 
 func init() {
@@ -58,7 +61,17 @@ func init() {
 		unzip, subcmd.ExactlyNumArguments(1))
 	unzipCmd.Document(`decompress a bzip2 file.`)
 
-	cmdSet = subcmd.NewCommandSet(bzcatCmd, unzipCmd)
+	scanCmd := subcmd.NewCommand("scan",
+		subcmd.MustRegisterFlagStruct(&noFlags{}, nil, nil),
+		scan, subcmd.AtLeastNArguments(1))
+	scanCmd.Document(`scan a bzip2 file using the pbzip2 package's scanner.`)
+
+	bz2Stats := subcmd.NewCommand("bz2-stats",
+		subcmd.MustRegisterFlagStruct(&noFlags{}, nil, nil),
+		bz2stats, subcmd.AtLeastNArguments(1))
+	bz2Stats.Document(`scan a bzip2 file to obtain bz2 stats on each block, the scan is serial and is intended purely for debugging purposes.`)
+
+	cmdSet = subcmd.NewCommandSet(bzcatCmd, unzipCmd, scanCmd, bz2Stats)
 	cmdSet.Document(`decompress and inspect bzip2 files. Files may be local, on S3 or a URL.`)
 
 	file.RegisterImplementation("s3", func() file.Implementation {
