@@ -10,7 +10,7 @@ orbs:
 jobs:
   test-linux:
     docker:
-      - image: cimg/go:<< parameters.go >>
+      - image: cimg/go:<< pipeline.parameters.go >>
     steps:
       - checkout
       - run:
@@ -30,8 +30,7 @@ jobs:
             go test -failfast --covermode=atomic -race ./...
 
   test-macos:
-    executor:
-      name: macos
+    macos:
       xcode: 11.4.1
     environment:
       GOPATH: /Users/distiller/go
@@ -41,7 +40,7 @@ jobs:
       - run:
           name: install
           command: |
-            curl -sSL https://golang.org/dl/go<< parameters.go >>.darwin-amd64.tar.gz | sudo tar -xzf - -C /Users/distiller/go
+            curl -sSL https://golang.org/dl/go<< pipeline.parameters.go >>.darwin-amd64.tar.gz | sudo tar -xzf - -C /Users/distiller/go
             sudo chown ${USER}:admin /Users/distiller/go/go
       - run:
           name: test
@@ -50,7 +49,7 @@ jobs:
 
   lint:
     docker:
-      - image: cimg/go:<< parameters.go >>
+      - image: cimg/go:<< pipeline.parameters.go >>
     steps:
       - checkout
       - run:
