@@ -144,6 +144,100 @@ func bci(c ...int) []int {
 	return c
 }
 
+func testScanFile(ctx context.Context, t *testing.T, rd io.Reader, stdlibData []byte,
+	name string,
+	streamCRC uint32,
+	blockCRCs []uint32,
+	blockSizes []int) {
+	var (
+		sc     = pbzip2.NewScanner(rd)
+		data   []byte
+		n      int
+		pwg    sync.WaitGroup
+		pbuf   []byte
+		perr   error
+		prgCh  = make(chan pbzip2.Progress, 3)
+		prgwg  sync.WaitGroup
+		prgerr error
+		crcs   []uint32
+		sizes  []int
+	)
+
+	prgwg.Add(1)
+	go func(n string) {
+		prgerr = progress(n, prgCh)
+		prgwg.Done()
+	}(name)
+
+	dc := pbzip2.NewDecompressor(ctx,
+		pbzip2.BZConcurrency(3),
+		pbzip2.BZSendUpdates(prgCh))
+
+	pwg.Add(1)
+	go func(n string) {
+		pbuf, perr = ioutil.ReadAll(dc)
+		pwg.Done()
+	}(name)
+
+	for sc.Scan(ctx) {
+		block := sc.Block()
+		// Parallel decompress.
+		if err := dc.Append(block); err != nil {
+			t.Fatal(err)
+		}
+		if len(block.Data) == 0 {
+			continue
+		}
+		crcs = append(crcs, block.CRC)
+		sizes = append(sizes, block.SizeInBits)
+		// Synchronous scan + decompress.
+		data = synchronousBlockBzip2(t, block, name, data)
+		n++
+		if block.EOS {
+			if got, want := block.StreamCRC, streamCRC; got != want {
+				t.Errorf("%v: got %v, want %v", name, got, want)
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		t.Errorf("%v: scan failed: %v", name, err)
+		return
+	}
+
+	if err := dc.Finish(); err != nil {
+		t.Errorf("Finish: %v", err)
+	}
+
+	if got, want := crcs, blockCRCs; !reflect.DeepEqual(got, want) {
+		t.Errorf("%v: got %v, want %v", name, got, want)
+	}
+
+	if got, want := sizes, blockSizes; !reflect.DeepEqual(got, want) {
+		t.Errorf("%v: got %v, want %v", name, got, want)
+	}
+
+	if got, want := data, bzip2Data[name]; !bytes.Equal(got, want) {
+		t.Errorf("%v: got %v..., want %v...", name, internal.FirstN(10, got), internal.FirstN(10, want))
+	}
+
+	if got, want := data, stdlibData; !bytes.Equal(got, want) {
+		t.Errorf("%v: got %v..., want %v...", name, internal.FirstN(10, got), internal.FirstN(10, want))
+	}
+
+	pwg.Wait()
+	if err := perr; err != nil {
+		t.Errorf("failed to read from parallel decompressor: %v", err)
+	}
+	if got, want := pbuf, bzip2Data[name]; !bytes.Equal(got, want) {
+		t.Errorf("%v: got %v..., want %v...", name, internal.FirstN(10, got), internal.FirstN(10, want))
+	}
+	close(prgCh)
+	prgwg.Wait()
+	if err := prgerr; err != nil {
+		t.Errorf("progress indicator error: %v", err)
+	}
+}
+
 func TestScan(t *testing.T) {
 	ctx := context.Background()
 	// Note that gentestdata.go was used to generate the test cases below
@@ -185,103 +279,8 @@ func TestScan(t *testing.T) {
 	} {
 		filename := bzip2Files[tc.name]
 		rd, stdlibData := openBzipFile(t, filename), readBzipFile(t, filename)
-
 		defer rd.Close()
-
-		var (
-			sc     = pbzip2.NewScanner(rd)
-			data   []byte
-			n      int
-			pwg    sync.WaitGroup
-			pbuf   []byte
-			perr   error
-			prgCh  = make(chan pbzip2.Progress, 3)
-			prgwg  sync.WaitGroup
-			prgerr error
-			crcs   []uint32
-			sizes  []int
-		)
-
-		prgwg.Add(1)
-		go func(n string) {
-			prgerr = progress(n, prgCh)
-			prgwg.Done()
-		}(tc.name)
-
-		dc := pbzip2.NewDecompressor(ctx,
-			pbzip2.BZConcurrency(3),
-			pbzip2.BZSendUpdates(prgCh))
-
-		pwg.Add(1)
-		go func(n string) {
-			pbuf, perr = ioutil.ReadAll(dc)
-			pwg.Done()
-		}(tc.name)
-
-		for sc.Scan(ctx) {
-			block := sc.Block()
-			// Parallel decompress.
-			if err := dc.Append(block); err != nil {
-				t.Fatal(err)
-			}
-			if len(block.Data) == 0 {
-				continue
-			}
-			crcs = append(crcs, block.CRC)
-			sizes = append(sizes, block.SizeInBits)
-			// Synchronous scan + decompress.
-			data = synchronousBlockBzip2(t, block, tc.name, data)
-			n++
-			if block.EOS {
-				if got, want := block.StreamCRC, tc.streamCRC; got != want {
-					t.Errorf("%v: got %v, want %v", tc.name, got, want)
-				}
-			}
-		}
-		if err := sc.Err(); err != nil {
-			t.Errorf("%v: scan failed: %v", tc.name, err)
-			continue
-		}
-
-		/*if got, want := sc.StreamCRC(), tc.streamCRC; got != want {
-			t.Errorf("%v: got %v, want %v", tc.name, got, want)
-		}*/
-
-		if got, want := crcs, tc.blockCRCs; !reflect.DeepEqual(got, want) {
-			t.Errorf("%v: got %v, want %v", tc.name, got, want)
-		}
-
-		if got, want := sizes, tc.blockSizes; !reflect.DeepEqual(got, want) {
-			t.Errorf("%v: got %v, want %v", tc.name, got, want)
-		}
-
-		if got, want := data, bzip2Data[tc.name]; !bytes.Equal(got, want) {
-			t.Errorf("%v: got %v..., want %v...", tc.name, internal.FirstN(10, got), internal.FirstN(10, want))
-		}
-
-		if got, want := data, stdlibData; !bytes.Equal(got, want) {
-			t.Errorf("%v: got %v..., want %v...", tc.name, internal.FirstN(10, got), internal.FirstN(10, want))
-		}
-
-		err := dc.Finish()
-		if err != nil {
-			t.Errorf("Finish: %v", err)
-		}
-		/*if got, want := crc, tc.streamCRC; got != want {
-			t.Errorf("%v: got %v, want %v", tc.name, got, want)
-		}*/
-		pwg.Wait()
-		if err := perr; err != nil {
-			t.Errorf("failed to read from parallel decompressor: %v", err)
-		}
-		if got, want := pbuf, bzip2Data[tc.name]; !bytes.Equal(got, want) {
-			t.Errorf("%v: got %v..., want %v...", tc.name, internal.FirstN(10, got), internal.FirstN(10, want))
-		}
-		close(prgCh)
-		prgwg.Wait()
-		if err := prgerr; err != nil {
-			t.Errorf("progress indicator error: %v", err)
-		}
+		testScanFile(ctx, t, rd, stdlibData, tc.name, tc.streamCRC, tc.blockCRCs, tc.blockSizes)
 	}
 }
 

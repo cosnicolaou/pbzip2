@@ -205,25 +205,9 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	}
 
 	if bitOffset == 0 {
-		// Check for having skipped past an EOS block.
-		if newStreamBlockSize, prevStreamCRC, consumed, trailerOffset, ok := handleSkippedEOS(buf[:byteOffset], byteOffset); ok {
-			szBits := ((byteOffset - consumed) * 8) + trailerOffset - sc.prevBitOffset
-			szBytes := szBits / 8
-			if szBits%8 != 0 {
-				szBytes++
-			}
-			if sc.prevBitOffset > 0 {
-				szBytes++
-			}
-			// Note that size in bites needs to be the size of the previous
-			// compressed block up to the EOS trailer and hence needs to take
-			// the trailer offset into account.
-			sc.initBlockValues(true, buf, szBytes, szBits, prevStreamCRC)
-			sc.currentStreamBlockSize = newStreamBlockSize
-			sc.prevBitOffset = bitOffset
-
-			// skip the magic # before starting the search for the next magic #.
-			sc.brd.Discard(byteOffset + len(blockMagic))
+		// If an EOS magic number was skipped, the bitoffset must be zero
+		// since the stream has ended.
+		if ok := sc.skippedEOS(buf, byteOffset, bitOffset); ok {
 			return true
 		}
 	}
@@ -233,6 +217,32 @@ func (sc *Scanner) Scan(ctx context.Context) bool {
 	}
 	sc.initBlockValues(false, buf, sz, (byteOffset*8)+bitOffset-sc.prevBitOffset, 0)
 	sc.prevBitOffset = bitOffset
+	// skip the magic # before starting the search for the next magic #.
+	sc.brd.Discard(byteOffset + len(blockMagic))
+	return true
+}
+
+// Check for having skipped past an EOS block.
+func (sc *Scanner) skippedEOS(buf []byte, byteOffset, bitOffset int) bool {
+	newStreamBlockSize, prevStreamCRC, consumed, trailerOffset, ok := handleSkippedEOS(buf[:byteOffset], byteOffset)
+	if !ok {
+		return false
+	}
+	szBits := ((byteOffset - consumed) * 8) + trailerOffset - sc.prevBitOffset
+	szBytes := szBits / 8
+	if szBits%8 != 0 {
+		szBytes++
+	}
+	if sc.prevBitOffset > 0 {
+		szBytes++
+	}
+	// Note that size in bites needs to be the size of the previous
+	// compressed block up to the EOS trailer and hence needs to take
+	// the trailer offset into account.
+	sc.initBlockValues(true, buf, szBytes, szBits, prevStreamCRC)
+	sc.currentStreamBlockSize = newStreamBlockSize
+	sc.prevBitOffset = bitOffset
+
 	// skip the magic # before starting the search for the next magic #.
 	sc.brd.Discard(byteOffset + len(blockMagic))
 	return true
