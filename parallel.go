@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"runtime"
 	"strings"
@@ -148,7 +147,7 @@ func (dc *Decompressor) trace(format string, args ...interface{}) {
 func (b *blockDesc) decompress() {
 	start := time.Now()
 	rd := bzip2.NewBlockReader(b.StreamBlockSize, b.Data, b.BitOffset)
-	b.uncompressed, b.err = ioutil.ReadAll(rd)
+	b.uncompressed, b.err = io.ReadAll(rd)
 	b.duration = time.Since(start)
 }
 

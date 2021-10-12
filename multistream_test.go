@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"testing"
 
 	"github.com/cosnicolaou/pbzip2"
@@ -53,7 +52,7 @@ func TestMultipleStreamsScan(t *testing.T) {
 			t.Errorf("block %v: block CRC got 0x%08x, want 0x%08x", nblock, got, want)
 		}
 		rd := bzip2.NewBlockReader(block.StreamBlockSize, block.Data, block.BitOffset)
-		if _, err := ioutil.ReadAll(rd); err != nil {
+		if _, err := io.ReadAll(rd); err != nil {
 			t.Fatalf("block %v: EOS failed to decompress: %v\n", nblock, err)
 		}
 		nblock++

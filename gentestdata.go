@@ -2,13 +2,14 @@
 // Use of this source code is governed by the Apache-2.0
 // license that can be found in the LICENSE file.
 
+//go:build ignore
 // +build ignore
 
 package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -36,7 +37,7 @@ func main() {
 		raw, bz2 := tc.name, tc.name+".bz2"
 		os.Remove(raw)
 		os.Remove(bz2)
-		if err := ioutil.WriteFile(raw, tc.data, 0660); err != nil {
+		if err := os.WriteFile(raw, tc.data, 0660); err != nil {
 			log.Fatalf("write file: %v: %v", raw, err)
 		}
 		cmd := exec.Command("bzip2", append([]string{raw}, tc.args...)...)
@@ -49,7 +50,7 @@ func main() {
 			log.Fatalf("failed to open: %v: %v", bz2, err)
 		}
 		rd := bzip2.NewReaderWithStats(compressed)
-		if _, err = ioutil.ReadAll(rd); err != nil {
+		if _, err = io.ReadAll(rd); err != nil {
 			log.Fatalf("failed to read: %v: %v", bz2, err)
 		}
 		stats := bzip2.StreamStats(rd)

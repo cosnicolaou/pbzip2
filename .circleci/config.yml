@@ -1,7 +1,16 @@
+version: 2.1
+
+parameters:
+  go:
+    type: string
+    default: 1.17.2
+orbs:
+  win: circleci/windows@2.4.1
+
 jobs:
-  test:
+  test-linux:
     docker:
-      - image: cimg/go:1.17
+      - image: cimg/go:<< pipeline.parameters.go >>
     steps:
       - checkout
       - run:
@@ -10,9 +19,19 @@ jobs:
             sudo apt-get update && sudo apt-get install -y ca-certificates
             go test -failfast --covermode=atomic -race ./...
 
+  test-windows:
+    executor:
+      name: win/default
+    steps:
+      - checkout
+      - run:
+          name: test
+          command: |
+            go test -failfast --covermode=atomic -race ./...
+
   lint:
     docker:
-      - image: cimg/go:1.17
+      - image: cimg/go:<< pipeline.parameters.go >>
     steps:
       - checkout
       - run:
@@ -24,9 +43,9 @@ jobs:
           command: |
             golangci-lint run ./...
 
-version: 2.1
 workflows:
   main:
     jobs:
-      - test
+      - test-linux
+      - test-windows
       - lint

@@ -6,8 +6,8 @@ package internal
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -47,7 +47,7 @@ func GenReproducibleRandomData(size int) []byte {
 
 // CreateBzipFile creates a bzip file of the supplied raw data.
 func CreateBzipFile(filename, blockSize string, data []byte) error {
-	if err := ioutil.WriteFile(filename, data, 0660); err != nil {
+	if err := os.WriteFile(filename, data, 0660); err != nil {
 		return fmt.Errorf("write file: %v: %v", filename, err)
 	}
 	cmd := exec.Command("bzip2", filename, blockSize)
