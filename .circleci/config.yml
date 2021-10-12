@@ -2,6 +2,7 @@ version: 2.1
 
 orbs:
   win: circleci/windows@2.4.1
+  golang: cci-orb/golang@0.1.20
 
 jobs:
   test-linux:
@@ -20,20 +21,21 @@ jobs:
       name: win/default
     steps:
       - checkout
-      - run:
-          name: test
-          command: |
-            go test -failfast --covermode=atomic -race ./...
+      - go/test:
+          covermode: atomic
+          failfast: true
+          race: true
 
   test-macos:
-    macos:
+    executor:
+      name: macos
       xcode: 11.4.1
     steps:
       - checkout
-      - run:
-          name: test
-          command: |
-            go test -failfast --covermode=atomic -race ./...
+      - go/test:
+          covermode: atomic
+          failfast: true
+          race: true
 
   lint:
     docker:
