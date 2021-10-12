@@ -76,7 +76,7 @@ func decompress(ctx context.Context, sc *Scanner, dc *Decompressor) error {
 		dc.Finish()
 		return err
 	}
-	return dc.Finish() //handleEOS(sc, dc)
+	return dc.Finish()
 }
 
 // scan runs the scanner against the input stream invoking the decompressor

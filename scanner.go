@@ -145,16 +145,6 @@ func readCRC(block []byte, shift int) uint32 {
 	return binary.BigEndian.Uint32(tmp[1:5])
 }
 
-func prettyPrintBlock(block []byte) {
-	for i := 0; i < len(block); i++ {
-		if i > 0 && (i%32 == 0) {
-			fmt.Println()
-		}
-		fmt.Printf("%02x ", block[i])
-	}
-	fmt.Println()
-}
-
 // Scan returns true if there is a block to be returned.
 func (sc *Scanner) Scan(ctx context.Context) bool {
 	if sc.err != nil || sc.done {
@@ -315,7 +305,7 @@ func trimEmptyFile(buf []byte) ([]byte, bool) {
 // .padding:0..7
 //
 // If an EOS block has been skipped then the compressed block must
-// be preceeded by a valid file header, zero or empty files and
+// be preceded by a valid file header, zero or empty files and
 // then the EOS header. Recall that an empty file is a file
 // header followed by an EOS block with a zero CRC.
 //
