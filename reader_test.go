@@ -87,6 +87,9 @@ func TestIOReader(t *testing.T) {
 func testIOReader(t *testing.T, readAll func(io.Reader) ([]byte, error)) {
 	ctx := context.Background()
 
+	// Use a fixed size pool.
+	pool := pbzip2.CreateConcurrencyPool(2)
+
 	for _, name := range []string{"empty", "hello", "300KB3_Random", "900KB2_Random", "1033KB4_Random"} {
 		filename := bzip2Files[name]
 		stdlibData := readBzipFile(t, filename)
@@ -94,7 +97,7 @@ func testIOReader(t *testing.T, readAll func(io.Reader) ([]byte, error)) {
 		for _, concurrency := range []int{1, 2, runtime.GOMAXPROCS(-1)} {
 			rd := openBzipFile(t, filename)
 			drd := pbzip2.NewReader(ctx, rd,
-				pbzip2.DecompressionOptions(pbzip2.BZConcurrency(concurrency)))
+				pbzip2.DecompressionOptions(pbzip2.BZConcurrency(concurrency), pbzip2.BZConcurrencyPool(pool)))
 			data, err := readAll(drd)
 			if err != nil {
 				t.Errorf("%v: readAll failed: %v", name, err)
@@ -108,6 +111,12 @@ func testIOReader(t *testing.T, readAll func(io.Reader) ([]byte, error)) {
 				t.Errorf("%v: got %v..., want %v...", name, internal.FirstN(10, got), internal.FirstN(10, want))
 			}
 			rd.Close()
+
+			// Validate that all tokens were returned.
+			if len(pool) != cap(pool) {
+				t.Errorf("Want pool size %d, got %d", cap(pool), len(pool))
+			}
+
 		}
 	}
 }
@@ -174,6 +183,34 @@ func TestCancelation(t *testing.T) {
 		}
 	}
 
+	// Test with different levels of concurrency and a pool.
+	for _, concurrency := range []int{1, 2, runtime.GOMAXPROCS(-1)} {
+		pool := pbzip2.CreateConcurrencyPool(concurrency - 1)
+		dcOpts := pbzip2.DecompressionOptions(pbzip2.BZConcurrency(concurrency), pbzip2.BZConcurrencyPool(pool))
+
+		for i := range []int{1, 77, 100} {
+			rd := openBzipFile(t, filename)
+			ctx, cancel := context.WithCancel(ctx)
+			drd := pbzip2.NewReader(ctx, rd, dcOpts)
+
+			_, max, err := readAllSampleAndCancel(cancel, i, drd)
+
+			validateGoRoutines(t,
+				ngs,
+				pbzip2.GetNumDecompressionGoRoutines(),
+				max,
+				concurrency)
+
+			if err == nil || err.Error() != "context canceled" {
+				t.Errorf("expected an error or different error to the one received: %v", err)
+			}
+			cancel()
+		}
+		// Validate that all tokens were returned.
+		if len(pool) != cap(pool) {
+			t.Errorf("Want pool size %d, got %d", cap(pool), len(pool))
+		}
+	}
 	// Test immediate cancelation.
 	rd := openBzipFile(t, filename)
 	ctx, cancel := context.WithCancel(ctx)
