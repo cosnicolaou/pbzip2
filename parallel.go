@@ -30,6 +30,7 @@ type decompressorOpts struct {
 	verbose     bool
 	concurrency int
 	progressCh  chan<- Progress
+	pool        chan struct{}
 }
 
 type DecompressorOption func(*decompressorOpts)
@@ -47,6 +48,32 @@ func BZConcurrency(n int) DecompressorOption {
 	return func(o *decompressorOpts) {
 		o.concurrency = n
 	}
+}
+
+// BZConcurrencyPool will add a thread safe pool to control concurrency.
+// This can be used to limit the total number of active goroutines decompressing concurrently.
+// Use CreateConcurrencyPool to create a pool of a certain size that can be shared across several decompressors.
+// If not set, no limit will apply.
+func BZConcurrencyPool(pool chan struct{}) DecompressorOption {
+	return func(o *decompressorOpts) {
+		o.pool = pool
+	}
+}
+
+// CreateConcurrencyPool will create a pool that can be shared among several decompressor
+// that will limit the total number of concurrently running decompressors.
+// Each decompressor will still only use the number of concurrent decompressors set in BZConcurrency.
+// Specifying <= 0 will use runtime.GOMAXPROCS to set a value.
+// Caller should not perform any operations on the returned channel.
+func CreateConcurrencyPool(maxConcurrent int) chan struct{} {
+	if maxConcurrent <= 0 {
+		maxConcurrent = runtime.GOMAXPROCS(0)
+	}
+	ch := make(chan struct{}, maxConcurrent)
+	for i := 0; i < maxConcurrent; i++ {
+		ch <- struct{}{}
+	}
+	return ch
 }
 
 // BZSendUpdates sets the channel for sending progress updates over.
@@ -107,7 +134,7 @@ func NewDecompressor(ctx context.Context, opts ...DecompressorOption) *Decompres
 	for i := 0; i < o.concurrency; i++ {
 		go func() {
 			atomic.AddInt64(&numDecompressionGoRoutines, 1)
-			dc.worker(ctx, dc.workCh, dc.doneCh)
+			dc.worker(ctx, dc.workCh, dc.doneCh, o.pool)
 			atomic.AddInt64(&numDecompressionGoRoutines, -1)
 			dc.workWg.Done()
 		}()
@@ -151,16 +178,28 @@ func (b *blockDesc) decompress() {
 	b.duration = time.Since(start)
 }
 
-func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out chan<- *blockDesc) {
+func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out chan<- *blockDesc, pool chan struct{}) {
 	for {
 		select {
 		case block := <-in:
 			if block == nil {
 				return
 			}
+			if pool != nil {
+				// Wait for a token from the pool.
+				select {
+				case <-pool:
+				case <-ctx.Done():
+					return
+				}
+			}
 			dc.trace("decompressing: %s", block)
 			block.decompress()
 			dc.trace("decompressed: %s, ch %v/%v", block, len(out), cap(out))
+			if pool != nil {
+				pool <- struct{}{}
+			}
+
 			select {
 			case out <- block:
 			case <-ctx.Done():
