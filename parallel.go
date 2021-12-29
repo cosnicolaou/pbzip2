@@ -320,13 +320,12 @@ func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc
 }
 
 func (dc *Decompressor) handlePossibleEOS(min *blockDesc) error {
-	if !min.EOS {
-		return nil
+	if min.EOS {
+		if got, want := dc.streamCRC, min.StreamCRC; got != want {
+			return fmt.Errorf("mismatched stream CRCs: calculated=0x%08x != stored=0x%08x", got, want)
+		}
+		dc.streamCRC = 0
 	}
-	if got, want := dc.streamCRC, min.StreamCRC; got != want {
-		return fmt.Errorf("mismatched stream CRCs: calculated=0x%08x != stored=0x%08x", got, want)
-	}
-	dc.streamCRC = 0
 	return nil
 }
 
