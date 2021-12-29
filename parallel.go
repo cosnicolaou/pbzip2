@@ -359,7 +359,7 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 					dc.streamCRC = 0
 				}
 
-				if dc.progressCh != nil {
+				if dc.progressCh != nil && ctx.Err() == nil {
 					dc.progressCh <- Progress{
 						Duration:   min.duration,
 						Block:      min.order,
