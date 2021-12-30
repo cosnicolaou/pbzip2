@@ -319,8 +319,18 @@ func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc
 
 }
 
+func (dc *Decompressor) handlePossibleEOS(min *blockDesc) error {
+	dc.streamCRC = updateStreamCRC(dc.streamCRC, min.CRC)
+	if min.EOS {
+		if got, want := dc.streamCRC, min.StreamCRC; got != want {
+			return fmt.Errorf("mismatched stream CRCs: calculated=0x%08x != stored=0x%08x", got, want)
+		}
+		dc.streamCRC = 0
+	}
+	return nil
+}
+
 func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
-	defer dc.pwr.Close()
 	expected := uint64(1)
 	for {
 		dc.trace("assemble select")
@@ -350,15 +360,10 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 					dc.pwr.CloseWithError(err)
 					return
 				}
-				dc.streamCRC = updateStreamCRC(dc.streamCRC, min.CRC)
-				if min.EOS {
-					if got, want := dc.streamCRC, min.StreamCRC; got != want {
-						dc.pwr.CloseWithError(fmt.Errorf("mismatched stream CRCs: calculated=0x%08x != stored=0x%08x", got, want))
-						return
-					}
-					dc.streamCRC = 0
+				if err := dc.handlePossibleEOS(min); err != nil {
+					dc.pwr.CloseWithError(err)
+					return
 				}
-
 				if dc.progressCh != nil && ctx.Err() == nil {
 					dc.progressCh <- Progress{
 						Duration:   min.duration,
@@ -370,6 +375,7 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 				}
 			}
 			if block == nil && len(*dc.heap) == 0 {
+				dc.pwr.Close()
 				return
 			}
 		case <-ctx.Done():
