@@ -280,6 +280,7 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 }
 
 // readBlock reads a bzip2 block. The magic number should already have been consumed.
+//
 //nolint:gocyclo
 func (bz2 *reader) readBlock() (err error) {
 	br := &bz2.br
