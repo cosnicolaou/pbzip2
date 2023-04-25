@@ -157,7 +157,7 @@ func TestFindPatterns(t *testing.T) {
 		}
 	}
 
-	rnd := rand.New(rand.NewSource(time.Now().Unix()))
+	rnd := rand.New(rand.NewSource(time.Now().Unix())) //nolint:gosec
 	for i := 6; i < 65; i++ {
 		filler := make([]byte, i)
 		n, err := rnd.Read(filler)
