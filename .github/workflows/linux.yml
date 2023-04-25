@@ -25,7 +25,6 @@ jobs:
 
       - name: Test
         run: |
-          cd github.com/vanadium/go.lib
           go test --race --covermode=atomic ./...
 
   linting:
