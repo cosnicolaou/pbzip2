@@ -53,7 +53,8 @@ func ShiftRight(input []byte) []byte {
 // CPU cost of generating them.
 // a. fill out all possible values for the trailing two bytes.
 // b. shift the 6 bytes, one bit at a time, to the right in the bit stream,
-//    for two bytes.
+//
+//	for two bytes.
 func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordMap map[uint32]uint8) {
 	m0, m1, m2, m3, m4, m5 := magic[0], magic[1], magic[2], magic[3], magic[4], magic[5]
 

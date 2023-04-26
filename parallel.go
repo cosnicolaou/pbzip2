@@ -181,6 +181,7 @@ func (b *blockDesc) decompress() {
 func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out chan<- *blockDesc, pool chan struct{}) {
 	for {
 		select {
+		// Always wait for a block or for the channel to be closed.
 		case block := <-in:
 			if block == nil {
 				return
@@ -195,11 +196,10 @@ func (dc *Decompressor) worker(ctx context.Context, in <-chan *blockDesc, out ch
 			}
 			dc.trace("decompressing: %s", block)
 			block.decompress()
-			dc.trace("decompressed: %s, ch %v/%v", block, len(out), cap(out))
+			dc.trace("decompressed: %s (%v), ch %v/%v", block, block.err, len(out), cap(out))
 			if pool != nil {
 				pool <- struct{}{}
 			}
-
 			select {
 			case out <- block:
 			case <-ctx.Done():
@@ -242,6 +242,10 @@ func (dc *Decompressor) Finish() error {
 		err = dc.ctx.Err()
 	default:
 	}
+	// NOTE, that the the assemble method must read all of the output
+	// produced by the workers, even in the event of an error. Otherwise
+	// a deadlock will occur with the workers trying to write blocks to
+	// the channel that the assemble method is no longer reading from.
 	close(dc.workCh)
 	dc.workWg.Wait()
 	close(dc.doneCh)
@@ -302,7 +306,7 @@ func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc
 	next := (*dc.heap)[0]
 	bwr := &bitstream.BitWriter{}
 	// Note that the first block has an offset in the first byte and a size in
-	// bits and hence need the sum of those to accurently reflect the size of
+	// bits and hence need the sum of those to accurately reflect the size of
 	// the first block in terms of appending to it.
 	bwr.Init(min.Data, min.SizeInBits+min.BitOffset, len(min.Data)+len(next.Data)+len(blockMagic)+1)
 	bwr.Append(blockMagic[:], 0, len(blockMagic)*8)
@@ -330,6 +334,22 @@ func (dc *Decompressor) handlePossibleEOS(min *blockDesc) error {
 	return nil
 }
 
+// The assemble method must return after the worker (i.e. writer to ch) has
+// completed. In the case of a decompression error, assemble drain that channel
+// to prevent a deadlock.
+func (dc *Decompressor) waitForChannelToClose(ctx context.Context, ch <-chan *blockDesc) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		}
+	}
+}
+
 func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 	expected := uint64(1)
 	for {
@@ -350,6 +370,7 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 				if err := min.err; err != nil {
 					if !dc.tryMergeBlocks(ctx, ch, min) {
 						dc.pwr.CloseWithError(err)
+						dc.waitForChannelToClose(ctx, ch)
 						return
 					}
 					// merge was successful, so bump up the next
@@ -358,10 +379,12 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 				}
 				if _, err := dc.pwr.Write(min.uncompressed); err != nil {
 					dc.pwr.CloseWithError(err)
+					dc.waitForChannelToClose(ctx, ch)
 					return
 				}
 				if err := dc.handlePossibleEOS(min); err != nil {
 					dc.pwr.CloseWithError(err)
+					dc.waitForChannelToClose(ctx, ch)
 					return
 				}
 				if dc.progressCh != nil && ctx.Err() == nil {
@@ -376,6 +399,7 @@ func (dc *Decompressor) assemble(ctx context.Context, ch <-chan *blockDesc) {
 			}
 			if block == nil && len(*dc.heap) == 0 {
 				dc.pwr.Close()
+				dc.waitForChannelToClose(ctx, ch)
 				return
 			}
 		case <-ctx.Done():

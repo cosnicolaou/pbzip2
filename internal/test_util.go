@@ -26,7 +26,7 @@ func init() {
 // GenPredictableRandomData generates random data starting with a fixed
 // known seed.
 func GenPredictableRandomData(size int) []byte {
-	gen := rand.New(rand.NewSource(fixdRandSeed))
+	gen := rand.New(rand.NewSource(fixdRandSeed)) //nolint:gosec
 	out := make([]byte, size)
 	for i := range out {
 		out[i] = byte(gen.Intn(256))
@@ -37,7 +37,7 @@ func GenPredictableRandomData(size int) []byte {
 // GenReproducibleRandomData uses the random # seed printed out by this
 // file's init function.
 func GenReproducibleRandomData(size int) []byte {
-	gen := rand.New(randSource)
+	gen := rand.New(randSource) //nolint:gosec
 	out := make([]byte, size)
 	for i := range out {
 		out[i] = byte(gen.Intn(256))
@@ -47,7 +47,7 @@ func GenReproducibleRandomData(size int) []byte {
 
 // CreateBzipFile creates a bzip file of the supplied raw data.
 func CreateBzipFile(filename, blockSize string, data []byte) error {
-	if err := os.WriteFile(filename, data, 0660); err != nil {
+	if err := os.WriteFile(filename, data, 0600); err != nil {
 		return fmt.Errorf("write file: %v: %v", filename, err)
 	}
 	cmd := exec.Command("bzip2", filename, blockSize)

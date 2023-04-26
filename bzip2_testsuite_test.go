@@ -5,7 +5,7 @@ package pbzip2_test
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec
 	"fmt"
 	"io"
 	"io/fs"
@@ -104,7 +104,7 @@ func TestBzip2Tests(t *testing.T) {
 		}
 		defer bzfile.Close()
 		rd := pbzip2.NewReader(ctx, bzfile)
-		h := md5.New()
+		h := md5.New() //nolint:gosec
 		_, err = io.Copy(h, rd)
 		if len(tc.err) > 0 {
 			if err == nil || err.Error() != tc.err {
