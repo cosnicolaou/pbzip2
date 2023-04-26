@@ -334,7 +334,7 @@ func (dc *Decompressor) handlePossibleEOS(min *blockDesc) error {
 	return nil
 }
 
-// the assembe method must return after the worker (i.e. writer to ch) has
+// The assemble method must return after the worker (i.e. writer to ch) has
 // completed. In the case of a decompression error, assemble drain that channel
 // to prevent a deadlock.
 func (dc *Decompressor) waitForChannelToClose(ctx context.Context, ch <-chan *blockDesc) {
