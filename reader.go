@@ -118,7 +118,9 @@ func (rd *reader) Read(buf []byte) (int, error) {
 	if err == nil {
 		return n, nil
 	}
+
 	rd.wg.Wait() // wait for internal goroutine to finish.
+
 	// make sure to catch errors sent after the decompressor is done
 	// such as a CRC error.
 	select {
