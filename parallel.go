@@ -310,12 +310,12 @@ func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc
 		// check to see if the channel has been closed, failing to do
 		// so can lead to hangs since the next block may not exist in
 		// a corrupted input file.
-		select {
-		case block, ok := <-ch:
-			if !ok {
-				// channel has been closed.
-				return false
-			}
+
+		block, ok := <-ch
+		if !ok {
+			// channel has been closed.
+			return false
+		} else {
 			heap.Push(dc.heap, block)
 		}
 	}
