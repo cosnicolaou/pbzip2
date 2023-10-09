@@ -284,6 +284,7 @@ func (h *blockHeap) Pop() interface{} {
 func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc, min *blockDesc) bool {
 	// wait for the second consecutive block.
 	for {
+		// wait for a new block if there none currently in the heap.
 		for len(*dc.heap) < 1 {
 			select {
 			case block, ok := <-ch:
@@ -299,10 +300,26 @@ func (dc *Decompressor) tryMergeBlocks(ctx context.Context, ch <-chan *blockDesc
 				return false
 			}
 		}
+
 		if (*dc.heap)[0].order == min.order+1 {
+			// successfully found the next block that can be merged
+			// with the current one.
 			break
 		}
+
+		// check to see if the channel has been closed, failing to do
+		// so can lead to hangs since the next block may not exist in
+		// a corrupted input file.
+
+		block, ok := <-ch
+		if !ok {
+			// channel has been closed.
+			return false
+		} else {
+			heap.Push(dc.heap, block)
+		}
 	}
+
 	next := (*dc.heap)[0]
 	bwr := &bitstream.BitWriter{}
 	// Note that the first block has an offset in the first byte and a size in
