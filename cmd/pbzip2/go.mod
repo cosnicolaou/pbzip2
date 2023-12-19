@@ -2,8 +2,6 @@ module github.com/cosnicolaou/pbzip2/cmd/pbzip2
 
 go 1.21
 
-toolchain go1.21.5
-
 replace github.com/cosnicolaou/pbzip2 => ../../
 
 require (
