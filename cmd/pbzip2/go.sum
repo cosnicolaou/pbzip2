@@ -19,6 +19,8 @@ cloudeng.io/cmdutil v0.0.0-20230427034012-5eaade00fd0f h1:2Et6vNPNJsLsj2pY/rD9Ux
 cloudeng.io/cmdutil v0.0.0-20230427034012-5eaade00fd0f/go.mod h1:61z66hghBT6seTJlHsFMJwdNEfP1xOpj/H36uojYX0A=
 cloudeng.io/cmdutil v0.0.0-20231218033530-28c223bc0b1f h1:J5qCSyqigI0n6cmzMbLhdkT2tctRaKCsRe5HLglQRV4=
 cloudeng.io/cmdutil v0.0.0-20231218033530-28c223bc0b1f/go.mod h1:hoYkAtqaZlVijfSsWNwe+ntymZcYlIejsGaoX3oztAU=
+cloudeng.io/cmdutil v0.0.0-20231229190214-7d1745577f6b h1:EDAfZDeaVkN/jkODj7MA1TuIBuig/ISiaYte9jW3Pxc=
+cloudeng.io/cmdutil v0.0.0-20231229190214-7d1745577f6b/go.mod h1:bpwFzmwjrw07Hg8zEP1CjfpJqII475r2j4GYMjLQN/E=
 cloudeng.io/debug v0.0.0-20230105021008-948d22470af5/go.mod h1:UDKUtuaCh0+iaDe5+i70G3l3liexOPeU3h0lyUeAt+o=
 cloudeng.io/debug v0.0.0-20231026032435-4ad1389db593/go.mod h1:L94l9rix3PTZaCmlR4UiHtcU0ZVlFu5/BWbwgWSqqqk=
 cloudeng.io/errors v0.0.5/go.mod h1:4iZnGEBj5F3SqTHZF6AHiFMgeHeJWJJkVHx/UwbDYok=
@@ -36,16 +38,20 @@ cloudeng.io/file v0.0.0-20230427034012-5eaade00fd0f h1:UPzCEOOfihgVpKnkaQHDsWkty
 cloudeng.io/file v0.0.0-20230427034012-5eaade00fd0f/go.mod h1:svdodwp2fOBjFOl+rTWwlZiPF+fQB9Q8RuhdHvPQlfA=
 cloudeng.io/file v0.0.0-20231218033530-28c223bc0b1f h1:hhehW0R09DORn+KzqDehB3oZZxNWrYDttbypA0npIUA=
 cloudeng.io/file v0.0.0-20231218033530-28c223bc0b1f/go.mod h1:wWRNWpwzRg34QzMy58SqhFeB3tKdAmi6AUW+Dxz1OSU=
+cloudeng.io/file v0.0.0-20231229190214-7d1745577f6b h1:+e2p/xu/Xi8iqHqT4Lj3OdpCh8ao0Ack6oRdlJBs/ds=
+cloudeng.io/file v0.0.0-20231229190214-7d1745577f6b/go.mod h1:p0/JrbeIYRJarzN0kIY7FfVWOP9Htv1vOIs6YnaBBso=
 cloudeng.io/net v0.0.0-20230214072348-e50d5014b274/go.mod h1:13BN0nf3e35fdeiFH0pgduqEhOgWLMvnhYtRYg4WKE8=
 cloudeng.io/net v0.0.0-20230304024356-5d6b315e83f0/go.mod h1:D0bZpZHSBIlyvBG/i+JOubQDjxbYJX/eas8v9byykfc=
 cloudeng.io/net v0.0.0-20230307023515-8a194fbc7867/go.mod h1:b7cZgzjeLZxVX1DJAEEQSdI9zLhruVy9XG20voObvKk=
 cloudeng.io/net v0.0.0-20230408194454-a3ea69cf3b9f/go.mod h1:4TtqwU62cwzOBTm20oTBQqsJu3bNmFV8saDsJRCN21M=
 cloudeng.io/net v0.0.0-20231215020541-6e96c2291daf/go.mod h1:GYYeRiVO+3egJpViaerffdrX3EhBMftEEKSj2MKITLk=
+cloudeng.io/net v0.0.0-20231219174858-fd89ad37703c/go.mod h1:GYYeRiVO+3egJpViaerffdrX3EhBMftEEKSj2MKITLk=
 cloudeng.io/os v0.0.0-20221118174443-5eef698118a6/go.mod h1:hhGubbGRTXGbe6T0ZU2RSXfCo1Ktvzfb0BcpkK4xqvY=
 cloudeng.io/os v0.0.0-20230304024356-5d6b315e83f0/go.mod h1:Ak4HQwvBx5/6w5XT9VKS1BekYSi6QQAEvlbOtzN7eJA=
 cloudeng.io/os v0.0.0-20230307023515-8a194fbc7867/go.mod h1:gBS7WALqIPNN8ovv1DIuf5/MlQ90mKDjMSjwN/ZvoD4=
 cloudeng.io/os v0.0.0-20230408194454-a3ea69cf3b9f/go.mod h1:VaeqTUuJjqsGWuUAz4ZK9e2/RVXvV138F1X+8t+UyoI=
 cloudeng.io/os v0.0.0-20231215020541-6e96c2291daf/go.mod h1:Y1FBS4qqGw0mNi7VbDYqH3ySL680QkD7OHIofY9y4P4=
+cloudeng.io/os v0.0.0-20231219174858-fd89ad37703c/go.mod h1:Y1FBS4qqGw0mNi7VbDYqH3ySL680QkD7OHIofY9y4P4=
 cloudeng.io/path v0.0.4/go.mod h1:HTU24UoiQVjzSjN+K2kD8hpkBnoLGZh0OITJr3kfxUk=
 cloudeng.io/path v0.0.8 h1:wyHHEJLPoHe8jq6I7xJxM90Cy8hVkMNvW+jEQRvF3lg=
 cloudeng.io/path v0.0.8/go.mod h1:S9dU9pNDkx0EUIHY+Pcyfzs3/cItCI9lyClkwqv0PtM=
@@ -60,6 +66,7 @@ cloudeng.io/sys v0.0.0-20230309184059-9263072b1423/go.mod h1:Lt8onmpJi8I5Xt2EyHt
 cloudeng.io/sys v0.0.0-20230323174002-73014ceab7ea/go.mod h1:Lt8onmpJi8I5Xt2EyHtIfPkn4YaH12n4ehTr199ZGjY=
 cloudeng.io/sys v0.0.0-20231205162401-e17bf4b2dbb2/go.mod h1:/68XpG0RtUrrYfLQWtmG0zjYwubYe/CIvipnMnlX10A=
 cloudeng.io/sys v0.0.0-20231215020541-6e96c2291daf/go.mod h1:/68XpG0RtUrrYfLQWtmG0zjYwubYe/CIvipnMnlX10A=
+cloudeng.io/sys v0.0.0-20231219174858-fd89ad37703c/go.mod h1:/68XpG0RtUrrYfLQWtmG0zjYwubYe/CIvipnMnlX10A=
 cloudeng.io/text v0.0.8 h1:zJkm29A0G6Q9KRshiqQQArQ2X3P+X9G7AnNiMaCgRB0=
 cloudeng.io/text v0.0.8/go.mod h1:VPOCvDDUBocQe7rfQDZcyEpScLooZo/6cJs1cM0LOMI=
 cloudeng.io/text v0.0.11 h1:q3+p3gxwNdr/V+k4+77fj9QxVpUU8G7B4+v26m+sE8I=
@@ -82,6 +89,8 @@ github.com/aws/aws-sdk-go v1.44.255 h1:tOd7OP5V6BeHhANksc7CFB/ILS2mHj3kRhTfZKFns
 github.com/aws/aws-sdk-go v1.44.255/go.mod h1:aVsgQcEevwlmQ7qHE9I3h+dtQgpqhFB+i8Phjh7fkwI=
 github.com/aws/aws-sdk-go v1.49.5 h1:y2yfBlwjPDi3/sBVKeznYEdDy6wIhjA2L5NCBMLUIYA=
 github.com/aws/aws-sdk-go v1.49.5/go.mod h1:LF8svs817+Nz+DmiMQKTO3ubZ/6IaTpq3TjupRn3Eqk=
+github.com/aws/aws-sdk-go v1.49.13 h1:f4mGztsgnx2dR9r8FQYa9YW/RsKb+N7bgef4UGrOW1Y=
+github.com/aws/aws-sdk-go v1.49.13/go.mod h1:LF8svs817+Nz+DmiMQKTO3ubZ/6IaTpq3TjupRn3Eqk=
 github.com/biogo/store v0.0.0-20190426020002-884f370e325d/go.mod h1:Iev9Q3MErcn+w3UOJD/DkEzllvugfdx7bGcMOFhvr/4=
 github.com/cespare/xxhash v1.1.0/go.mod h1:XrSqR1VqqWfGrhpAt58auRo0WTKS1nRRg3ghfAqPWnc=
 github.com/cespare/xxhash/v2 v2.1.0/go.mod h1:dgIUBU3pDso/gPgZ1osOZ0iQf77oPR28Tjxl5dIMyVM=
