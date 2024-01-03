@@ -5,9 +5,9 @@ go 1.21
 replace github.com/cosnicolaou/pbzip2 => ../../
 
 require (
-	cloudeng.io/cmdutil v0.0.0-20231218033530-28c223bc0b1f
+	cloudeng.io/cmdutil v0.0.0-20231229190214-7d1745577f6b
 	cloudeng.io/errors v0.0.9
-	github.com/aws/aws-sdk-go v1.49.5
+	github.com/aws/aws-sdk-go v1.49.13
 	github.com/cosnicolaou/pbzip2 v1.0.3
 	github.com/grailbio/base v0.0.10
 	github.com/schollz/progressbar/v2 v2.15.0
@@ -21,12 +21,12 @@ require (
 	cloud.google.com/go/pubsub v1.0.1 // indirect
 	cloudeng.io/algo v0.0.0-20230408194454-a3ea69cf3b9f // indirect
 	cloudeng.io/debug v0.0.0-20231026032435-4ad1389db593 // indirect
-	cloudeng.io/file v0.0.0-20231218033530-28c223bc0b1f // indirect
-	cloudeng.io/net v0.0.0-20231215020541-6e96c2291daf // indirect
-	cloudeng.io/os v0.0.0-20231215020541-6e96c2291daf // indirect
+	cloudeng.io/file v0.0.0-20231229190214-7d1745577f6b // indirect
+	cloudeng.io/net v0.0.0-20231219174858-fd89ad37703c // indirect
+	cloudeng.io/os v0.0.0-20231219174858-fd89ad37703c // indirect
 	cloudeng.io/path v0.0.8 // indirect
 	cloudeng.io/sync v0.0.8 // indirect
-	cloudeng.io/sys v0.0.0-20231215020541-6e96c2291daf // indirect
+	cloudeng.io/sys v0.0.0-20231219174858-fd89ad37703c // indirect
 	cloudeng.io/text v0.0.11 // indirect
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 // indirect
