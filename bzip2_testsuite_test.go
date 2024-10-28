@@ -97,7 +97,7 @@ func TestBzip2Tests(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range testcases {
-		t.Logf(tc.filename)
+		t.Log(tc.filename)
 		bzfile, err := os.Open(tc.filename)
 		if err != nil {
 			t.Errorf("%v: %v", tc.filename, err)
