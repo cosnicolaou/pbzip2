@@ -447,11 +447,13 @@ func (bz2 *reader) readBlock() (err error) {
 			if repeat > bz2.blockSize-bufIndex {
 				return StructuralError("repeats past end of block")
 			}
-			for i := 0; i < repeat; i++ {
-				b := mtf.First()
-				bz2.tt[bufIndex] = uint32(b)
-				bz2.c[b]++
-				bufIndex++
+			c := bz2.c[:]
+			tt := bz2.tt[bufIndex : bufIndex+repeat]
+			bufIndex += repeat
+			b := mtf.First()
+			c[b] += uint(repeat)
+			for i := range tt {
+				tt[i] = uint32(b)
 			}
 			repeat = 0
 		}
