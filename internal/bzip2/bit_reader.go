@@ -18,7 +18,7 @@ type bitReader struct {
 	n         uint64
 	bits      uint
 	err       error
-	bytesRead int
+	bytesRead uint
 }
 
 // newBitReader returns a new bitReader reading from r. If r is not
@@ -70,12 +70,14 @@ func (br *bitReader) ReadBits64(bits uint) (n uint64) {
 }
 
 func (br *bitReader) bitsUsed() uint {
-	return (uint(br.bytesRead) * 8) - br.bits
+	return (br.bytesRead * 8) - br.bits
 }
 
+// ReadBits reads the given number of bits and returns them as per ReadBits64, it
+// must be called with bits <= 32.
 func (br *bitReader) ReadBits(bits uint) (n int) {
 	n64 := br.ReadBits64(bits)
-	return int(n64)
+	return int(n64) //#nosec G115 -- This is a false positive provided ReadBits is always called for < 32 bits.
 }
 
 func (br *bitReader) ReadBit() bool {
