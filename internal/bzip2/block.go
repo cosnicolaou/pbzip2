@@ -60,10 +60,10 @@ func (br *BlockReader) Read(buf []byte) (n int, err error) {
 	}
 	n = br.underlying.readFromBlock(buf)
 	if n > 0 || len(buf) == 0 {
-		br.underlying.blockCRC = updateCRC(br.underlying.blockCRC, buf[:n])
+		br.underlying.blockCRC.update(buf[:n])
 		return n, nil
 	}
-	if br.underlying.blockCRC != br.underlying.wantBlockCRC {
+	if br.underlying.blockCRC.val != br.underlying.wantBlockCRC {
 		return 0, fmt.Errorf("block checksum mismatch")
 	}
 	return n, io.EOF
