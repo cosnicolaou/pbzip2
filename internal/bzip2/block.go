@@ -30,7 +30,7 @@ type BlockReader struct {
 }
 
 // NewBlockReader returns an io.Reader to read a single bzip2 block.
-func NewBlockReader(blockSize int, src []byte, start int) io.Reader {
+func NewBlockReader(blockSize int, src []byte, start uint) io.Reader {
 	if len(src) == 0 {
 		return &BlockReader{err: io.EOF}
 	}
@@ -41,7 +41,7 @@ func NewBlockReader(blockSize int, src []byte, start int) io.Reader {
 	bz2.blockSize = blockSize
 	bz2.tt = make([]uint32, bz2.blockSize)
 	bz2.br = newBitReader(bytes.NewBuffer(src))
-	return &BlockReader{underlying: bz2, first: true, start: uint(start)}
+	return &BlockReader{underlying: bz2, first: true, start: start}
 }
 
 // Read implements io.Reader.

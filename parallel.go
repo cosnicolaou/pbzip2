@@ -173,7 +173,7 @@ func (dc *Decompressor) trace(format string, args ...interface{}) {
 
 func (b *blockDesc) decompress() {
 	start := time.Now()
-	rd := bzip2.NewBlockReader(b.StreamBlockSize, b.Data, b.BitOffset)
+	rd := bzip2.NewBlockReader(b.StreamBlockSize, b.Data, uint(b.BitOffset)) //#nosec G115 -- This is a false positive, b.BitOffset is always < 32.
 	b.uncompressed, b.err = io.ReadAll(rd)
 	b.duration = time.Since(start)
 }

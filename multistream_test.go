@@ -51,7 +51,8 @@ func TestMultipleStreamsScan(t *testing.T) {
 		if got, want := block.CRC, blockCRCs[nblock]; got != want {
 			t.Errorf("block %v: block CRC got 0x%08x, want 0x%08x", nblock, got, want)
 		}
-		rd := bzip2.NewBlockReader(block.StreamBlockSize, block.Data, block.BitOffset)
+		//#nosec G115 -- This is a false positive, block.BitOffset is always < 32.
+		rd := bzip2.NewBlockReader(block.StreamBlockSize, block.Data, uint(block.BitOffset))
 		if _, err := io.ReadAll(rd); err != nil {
 			t.Fatalf("block %v: EOS failed to decompress: %v\n", nblock, err)
 		}
