@@ -7,6 +7,7 @@ package bzip2
 
 import (
 	"io"
+	"math"
 )
 
 // There's no RFC for bzip2. I used the Wikipedia page for reference and a lot
@@ -231,7 +232,7 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 				bz2.stats.EndOfStreamOffset = offset
 			}
 			// Check end-of-file CRC.
-			wantFileCRC := uint32(br.ReadBits64(32))
+			wantFileCRC := uint32(br.ReadBits64(32)) //#nosec G115 -- This is a false positive, since ReadBits was called for 32 bits.
 
 			if br.err != nil {
 				return 0, br.err
@@ -284,14 +285,15 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 //nolint:gocyclo
 func (bz2 *reader) readBlock() (err error) {
 	br := &bz2.br
-	bz2.wantBlockCRC = uint32(br.ReadBits64(32)) // skip checksum. TODO: check it if we can figure out what it is.
+  // skip checksum. TODO: check it if we can figure out what it is.
+	bz2.wantBlockCRC = uint32(br.ReadBits64(32)) //#nosec G115 -- This is a false positive, i is < math.MaxUint32.
 	bz2.blockCRC = crc{}
 	bz2.fileCRC = (bz2.fileCRC<<1 | bz2.fileCRC>>31) ^ bz2.wantBlockCRC
-	randomized := br.ReadBits(1)
+	randomized := br.ReadBits(1) //#nosec G115 -- This is a false positive, since ReadBits was called for 1 bit.
 	if randomized != 0 {
 		return StructuralError("deprecated randomized files")
 	}
-	origPtr := uint(br.ReadBits(24))
+	origPtr := uint(br.ReadBits(24)) //#nosec G115 -- This is a false positive, since ReadBits was called for 24 bits.
 
 	// If not every byte value is used in the block (i.e., it's text) then
 	// the symbol set is reduced. The symbols used are stored as a
@@ -379,7 +381,7 @@ func (bz2 *reader) readBlock() (err error) {
 					length++
 				}
 			}
-			lengths[j] = uint8(length)
+			lengths[j] = uint8(length) //#nosec G115 -- This is a false positive, since ReadBits was called for 5 bits.
 		}
 		huffmanTrees[i], err = newHuffmanTree(lengths)
 		if err != nil {
@@ -480,6 +482,11 @@ func (bz2 *reader) readBlock() (err error) {
 		bufIndex++
 	}
 
+	if bufIndex > math.MaxUint32 {
+		return StructuralError("preRLE too large for inverstBWT ")
+	}
+
+	//#nosec G115 -- This is a false positive, bufIndex is < math.MaxUint32.
 	if origPtr >= uint(bufIndex) {
 		return StructuralError("origPtr out of bounds")
 	}
@@ -506,6 +513,7 @@ func (bz2 *reader) readBlock() (err error) {
 // which leaves the output, still shuffled, in the bottom 8 bits of tt with the
 // index of the next byte in the top 24-bits. The index of the first byte is
 // returned.
+// len(tt) must be less than math.MaxUint32.
 func inverseBWT(tt []uint32, origPtr uint, c []uint) uint32 {
 	sum := uint(0)
 	for i := 0; i < 256; i++ {
@@ -515,7 +523,7 @@ func inverseBWT(tt []uint32, origPtr uint, c []uint) uint32 {
 
 	for i := range tt {
 		b := tt[i] & 0xff
-		tt[c[b]] |= uint32(i) << 8
+		tt[c[b]] |= uint32(i) << 8 //#nosec G115 -- This is a false positive, i is < math.MaxUint32.
 		c[b]++
 	}
 

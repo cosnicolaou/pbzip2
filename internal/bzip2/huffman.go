@@ -4,7 +4,10 @@
 
 package bzip2
 
-import "sort"
+import (
+	"math"
+	"sort"
+)
 
 // A huffmanTree is a binary tree which is navigated, bit-by-bit to reach a
 // symbol.
@@ -43,12 +46,12 @@ func (t *huffmanTree) Decode(br *bitReader) (v uint16) {
 		if br.bits > 0 {
 			// Get next bit - fast path.
 			br.bits--
-			bit = uint16(br.n>>(br.bits&63)) & 1
+			bit = uint16(br.n>>(br.bits&63)) & 1 //#nosec G115 -- This is a false positive, br.bits is always < 64.
 		} else {
 			// Get next bit - slow path.
 			// Use ReadBits to retrieve a single bit
 			// from the underling io.ByteReader.
-			bit = uint16(br.ReadBits(1))
+			bit = uint16(br.ReadBits(1)) //#nosec G115 -- This is a false positive, since ReadBits was called for 1 bit.
 		}
 
 		// Trick a compiler into generating conditional move instead of branch,
@@ -86,8 +89,8 @@ func newHuffmanTree(lengths []uint8) (huffmanTree, error) {
 	// bzip2 uses a canonical tree so that it can be reconstructed given
 	// only the code length assignments.
 
-	if len(lengths) < 2 {
-		panic("newHuffmanTree: too few symbols")
+	if len(lengths) < 2 || len(lengths) >= math.MaxUint32 {
+		panic("newHuffmanTree: too few/many symbols")
 	}
 
 	var t huffmanTree
@@ -96,7 +99,7 @@ func newHuffmanTree(lengths []uint8) (huffmanTree, error) {
 	// using the symbol value to break ties.
 	pairs := make([]huffmanSymbolLengthPair, len(lengths))
 	for i, length := range lengths {
-		pairs[i].value = uint16(i)
+		pairs[i].value = uint16(i) //#nosec G115 -- This is a false positive, i is < math.MaxUint32.
 		pairs[i].length = length
 	}
 
@@ -209,7 +212,7 @@ func buildHuffmanNode(t *huffmanTree, codes []huffmanCode, level uint32) (nodeIn
 		return buildHuffmanNode(t, left, level+1)
 	}
 
-	nodeIndex = uint16(t.nextNode)
+	nodeIndex = uint16(t.nextNode) //#nosec G115 -- This is a false positive, t.nextNode is < math.MaxUint32.
 	node := &t.nodes[t.nextNode]
 	t.nextNode++
 

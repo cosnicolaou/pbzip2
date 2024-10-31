@@ -126,7 +126,8 @@ func stdlibBzip2(filename string) ([]byte, error) {
 }
 
 func synchronousBlockBzip2(t *testing.T, block pbzip2.CompressedBlock, name string, existing []byte) []byte {
-	rd := bzip2.NewBlockReader(block.StreamBlockSize, block.Data, block.BitOffset)
+	//#nosec G115 -- This is a false positive, block.BitOffset is always < 32.
+	rd := bzip2.NewBlockReader(block.StreamBlockSize, block.Data, uint(block.BitOffset))
 	buf, err := io.ReadAll(rd)
 	if err != nil {
 		t.Errorf("%v: decompression failed: %v", name, err)

@@ -69,13 +69,13 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 			second[1] = m3
 			second[2] = m4
 			second[3] = m5
-			second[4] = uint8(i)
-			second[5] = uint8(j)
+			second[4] = uint8(i) //#nosec G115 -- This is a false positive, i is 0..255
+			second[5] = uint8(j) //#nosec G115 -- This is a false positive, j is 0..255
 			secondWordMap[binary.LittleEndian.Uint32(second[2:])] = 0
 			// shift right 8 times.
 			for s := 1; s < 8; s++ {
 				second = ShiftRight(second)
-				secondWordMap[binary.LittleEndian.Uint32(second[2:])] = uint8(s)
+				secondWordMap[binary.LittleEndian.Uint32(second[2:])] = uint8(s) //#nosec G115 -- This is a false positive, s is 1..7
 			}
 		}
 	}
@@ -113,6 +113,7 @@ func AllShiftedValues(magic [6]byte) (firstWordMap map[uint32]uint8, secondWordM
 // That is, if the pattern occurs in the third byte, the byte offset will be
 // two. If the pattern starts at the 2nd bit in the third byte, the byte offset
 // is still two, and the bit offset will be 2.
+// It returns -1, -1 if the pattern is not found.
 func Scan(pretest [256]bool, first, second map[uint32]uint8, input []byte) (int, int) {
 	pos := 1
 	il := len(input)
