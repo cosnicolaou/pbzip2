@@ -27,7 +27,7 @@ func (s StructuralError) Error() string {
 type reader struct {
 	br           bitReader
 	fileCRC      uint32
-	blockCRC     uint32
+	blockCRC     crc
 	wantBlockCRC uint32
 	setupDone    bool // true if we have parsed the bzip2 header.
 	blockSize    int  // blockSize in bytes, i.e. 900 * 1000.
@@ -196,17 +196,17 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 	for {
 		n := bz2.readFromBlock(buf)
 		if n > 0 || len(buf) == 0 {
-			bz2.blockCRC = updateCRC(bz2.blockCRC, buf[:n])
+			bz2.blockCRC.update(buf[:n])
 			return n, nil
 		}
 
 		// End of block. Check CRC.
-		if bz2.blockCRC != bz2.wantBlockCRC {
+		if bz2.blockCRC.val != bz2.wantBlockCRC {
 			bz2.br.err = StructuralError("block checksum mismatch")
 			return 0, bz2.br.err
 		}
 		if bz2.recordStats {
-			bz2.stats.BlockCRCs = append(bz2.stats.BlockCRCs, bz2.blockCRC)
+			bz2.stats.BlockCRCs = append(bz2.stats.BlockCRCs, bz2.blockCRC.val)
 		}
 
 		// Find next block.
@@ -287,7 +287,7 @@ func (bz2 *reader) readBlock() (err error) {
 	br := &bz2.br
 	// skip checksum. TODO: check it if we can figure out what it is.
 	bz2.wantBlockCRC = uint32(br.ReadBits64(32)) //#nosec G115 -- This is a false positive, i is < math.MaxUint32.
-	bz2.blockCRC = 0
+	bz2.blockCRC = crc{}
 	bz2.fileCRC = (bz2.fileCRC<<1 | bz2.fileCRC>>31) ^ bz2.wantBlockCRC
 	randomized := br.ReadBits(1) //#nosec G115 -- This is a false positive, since ReadBits was called for 1 bit.
 	if randomized != 0 {
@@ -528,34 +528,4 @@ func inverseBWT(tt []uint32, origPtr uint, c []uint) uint32 {
 	}
 
 	return tt[origPtr] >> 8
-}
-
-// This is a standard CRC32 like in hash/crc32 except that all the shifts are reversed,
-// causing the bits in the input to be processed in the reverse of the usual order.
-
-var crctab [256]uint32
-
-func init() {
-	const poly = 0x04C11DB7
-	for i := range crctab {
-		crc := uint32(i) << 24 //#nosec G115 -- This is a false positive, i is < 256
-		for j := 0; j < 8; j++ {
-			if crc&0x80000000 != 0 {
-				crc = (crc << 1) ^ poly
-			} else {
-				crc <<= 1
-			}
-		}
-		crctab[i] = crc
-	}
-}
-
-// updateCRC updates the crc value to incorporate the data in b.
-// The initial value is 0.
-func updateCRC(val uint32, b []byte) uint32 {
-	crc := ^val
-	for _, v := range b {
-		crc = crctab[byte(crc>>24)^v] ^ (crc << 8)
-	}
-	return ^crc
 }
