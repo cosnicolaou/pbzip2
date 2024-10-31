@@ -285,7 +285,7 @@ func (bz2 *reader) read(buf []byte) (int, error) {
 //nolint:gocyclo
 func (bz2 *reader) readBlock() (err error) {
 	br := &bz2.br
-  // skip checksum. TODO: check it if we can figure out what it is.
+	// skip checksum. TODO: check it if we can figure out what it is.
 	bz2.wantBlockCRC = uint32(br.ReadBits64(32)) //#nosec G115 -- This is a false positive, i is < math.MaxUint32.
 	bz2.blockCRC = crc{}
 	bz2.fileCRC = (bz2.fileCRC<<1 | bz2.fileCRC>>31) ^ bz2.wantBlockCRC
