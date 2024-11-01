@@ -190,7 +190,7 @@ func (bz2 *reader) readFromBlock(buf []byte) int {
 				repeats--
 				if bw.put(byte(bz2.lastByte)) {
 					bz2.repeats = repeats
-					return int(bw.n)
+					return int(bw.n) //#nosec G115 -- This is a false positive
 				}
 				if repeats == 0 {
 					bz2.repeats = 0
@@ -228,14 +228,14 @@ func (bz2 *reader) readFromBlock(buf []byte) int {
 					bz2.tPos = tPos
 					bz2.preRLEUsed = preRLEUsed
 					bz2.lastByte = lastByte
-					return int(bw.n)
+					return int(bw.n) //#nosec G115 -- This is a false positive
 				}
 			}
 		} else {
 			break
 		}
 	}
-	return int(bw.n)
+	return int(bw.n) //#nosec G115 -- This is a false positive
 }
 
 //nolint:gocyclo
