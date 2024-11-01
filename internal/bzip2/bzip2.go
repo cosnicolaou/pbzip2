@@ -8,6 +8,7 @@ package bzip2
 import (
 	"io"
 	"math"
+	"unsafe"
 )
 
 // There's no RFC for bzip2. I used the Wikipedia page for reference and a lot
@@ -138,6 +139,32 @@ func (bz2 *reader) Read(buf []byte) (n int, err error) {
 	return
 }
 
+type bufWriter struct {
+	n   uint
+	buf []byte
+	bp  *byte
+}
+
+func newBufWriter(buf []byte) bufWriter {
+	if 0 < len(buf) {
+		return bufWriter{
+			buf: buf,
+			bp:  &buf[0],
+		}
+	}
+	return bufWriter{}
+}
+
+func (bw *bufWriter) put(b byte) bool {
+	*bw.bp = b
+	bw.n++
+	if bw.n < uint(len(bw.buf)) {
+		bw.bp = (*byte)(unsafe.Add(unsafe.Pointer(bw.bp), 1))
+		return false
+	}
+	return true
+}
+
 func (bz2 *reader) readFromBlock(buf []byte) int {
 	// bzip2 is a block based compressor, except that it has a run-length
 	// preprocessing step. The block based nature means that we can
@@ -145,8 +172,11 @@ func (bz2 *reader) readFromBlock(buf []byte) int {
 	// preprocessing would require allocating huge buffers to store the
 	// maximum expansion. Thus we process blocks all at once, except for
 	// the RLE which we decompress as required.
-	n := 0
-	for (bz2.repeats > 0 || bz2.preRLEUsed < len(bz2.preRLE)) && n < len(buf) {
+	bw := newBufWriter(buf)
+	if bw.bp == nil {
+		return 0
+	}
+	for {
 		// We have RLE data pending.
 
 		// The run-length encoding works like this:
@@ -155,40 +185,57 @@ func (bz2 *reader) readFromBlock(buf []byte) int {
 		// include. (The number of repeats can be zero.) Because we are
 		// decompressing on-demand our state is kept in the reader
 		// object.
-
-		if bz2.repeats > 0 {
-			buf[n] = byte(bz2.lastByte)
-			n++
-			bz2.repeats--
-			if bz2.repeats == 0 {
-				bz2.lastByte = -1
+		if repeats := bz2.repeats; repeats > 0 {
+			for {
+				repeats--
+				if bw.put(byte(bz2.lastByte)) {
+					bz2.repeats = repeats
+					return int(bw.n)
+				}
+				if repeats == 0 {
+					bz2.repeats = 0
+					bz2.lastByte = -1
+					break
+				}
 			}
-			continue
 		}
+		if preRLEUsed, preRLE := bz2.preRLEUsed, bz2.preRLE; preRLEUsed < len(preRLE) {
+			tPos := bz2.tPos
+			byteRepeats := bz2.byteRepeats
+			lastByte := bz2.lastByte
+			for {
+				tPos = preRLE[tPos]
+				b := byte(tPos)
+				tPos >>= 8
+				preRLEUsed++
 
-		bz2.tPos = bz2.preRLE[bz2.tPos]
-		b := byte(bz2.tPos)
-		bz2.tPos >>= 8
-		bz2.preRLEUsed++
-
-		if bz2.byteRepeats == 3 {
-			bz2.repeats = uint(b)
-			bz2.byteRepeats = 0
-			continue
-		}
-
-		if bz2.lastByte == int(b) {
-			bz2.byteRepeats++
+				if byteRepeats == 3 {
+					bz2.repeats = uint(b)
+					bz2.byteRepeats = 0
+					bz2.tPos = tPos
+					bz2.preRLEUsed = preRLEUsed
+					bz2.lastByte = lastByte
+					break
+				}
+				if lastByte == int(b) {
+					byteRepeats++
+				} else {
+					lastByte = int(b)
+					byteRepeats = 0
+				}
+				if bw.put(b) || preRLEUsed == len(preRLE) {
+					bz2.byteRepeats = byteRepeats
+					bz2.tPos = tPos
+					bz2.preRLEUsed = preRLEUsed
+					bz2.lastByte = lastByte
+					return int(bw.n)
+				}
+			}
 		} else {
-			bz2.byteRepeats = 0
+			break
 		}
-		bz2.lastByte = int(b)
-
-		buf[n] = b
-		n++
 	}
-
-	return n
+	return int(bw.n)
 }
 
 //nolint:gocyclo
