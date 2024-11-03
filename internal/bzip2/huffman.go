@@ -73,7 +73,7 @@ func (t *huffmanTree) Decode(br *bitReader) (v uint16) {
 		br.bits -= 8
 		nodeIndex = se.value()
 	}
-	
+
 	for {
 		node := &t.nodes[nodeIndex]
 
