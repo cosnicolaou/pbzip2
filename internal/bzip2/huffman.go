@@ -17,6 +17,8 @@ type huffmanTree struct {
 	// of nodes to use when the tree is being constructed.
 	nodes    []huffmanNode
 	nextNode int
+	// Precomputed table to skip tree traversal for the first 8-bit pattern
+	shortcut [256]shortcutEntry
 }
 
 // A huffmanNode is a node in the tree. left and right contain indexes into the
@@ -34,10 +36,39 @@ type huffmanNode struct {
 // invalidNodeValue is an invalid index which marks a leaf node in the tree.
 const invalidNodeValue = 0xffff
 
+// shortcutEntry represents a shortcut from the root node of the huffman tree.
+// The lower 3 bits represent codeLen, the 4th bit indicates whether it is a symbol,
+// and the 5th bit onwards represent the symbol value if it is a symbol, or nodeIndex otherwise.
+type shortcutEntry uint16
+
+func (s shortcutEntry) isSymbol() bool {
+	return s&0x8 != 0
+}
+
+func (s shortcutEntry) codeLen() uint {
+	return uint(s&0x7) + 1
+}
+
+func (s shortcutEntry) value() uint16 {
+	return uint16(s >> 4)
+}
+
 // Decode reads bits from the given bitReader and navigates the tree until a
 // symbol is found.
 func (t *huffmanTree) Decode(br *bitReader) (v uint16) {
-	nodeIndex := uint16(0) // node 0 is the root of the tree.
+	// It is okay to prefetch up to the next block header (48 bits) and crc32 (32 bits), totaling 80 bits
+	if br.bits < 8 {
+		br.PrefetchBytes(7)
+	}
+	// Get the next 8 bits
+	b := (br.n >> ((br.bits - 8) & 63)) & 0xff
+	se := t.shortcut[b]
+	if se.isSymbol() {
+		br.bits -= se.codeLen()
+		return se.value()
+	}
+	br.bits -= 8
+	nodeIndex := se.value()
 
 	for {
 		node := &t.nodes[nodeIndex]
@@ -74,6 +105,30 @@ func (t *huffmanTree) Decode(br *bitReader) (v uint16) {
 				v = r
 			}
 			return
+		}
+	}
+}
+
+func (t *huffmanTree) buildShortcut() {
+	for b := range t.shortcut {
+		n := uint16(0) // 9 bit (0-258)
+		for i := 0; i < 8; i++ {
+			node := &t.nodes[n]
+			var v uint16
+			if (b>>(7-i))&1 != 0 {
+				n = node.left
+				v = node.leftValue
+			} else {
+				n = node.right
+				v = node.rightValue
+			}
+			if n == invalidNodeValue {
+				t.shortcut[b] = shortcutEntry(v<<4 | 0x8 | uint16(i))
+				break
+			}
+		}
+		if n != invalidNodeValue {
+			t.shortcut[b] = shortcutEntry(n << 4)
 		}
 	}
 }
@@ -144,6 +199,7 @@ func newHuffmanTree(lengths []uint8) (huffmanTree, error) {
 
 	t.nodes = make([]huffmanNode, len(codes))
 	_, err := buildHuffmanNode(&t, codes, 0)
+	t.buildShortcut()
 	return t, err
 }
 

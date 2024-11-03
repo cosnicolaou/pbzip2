@@ -69,6 +69,27 @@ func (br *bitReader) ReadBits64(bits uint) (n uint64) {
 	return
 }
 
+// PrefetchBytes reads `n` bytes from the underlying reader and stores them in the bitReader.
+func (br *bitReader) PrefetchBytes(n uint) {
+	if br.err != nil {
+		return
+	}
+	for i := uint(0); i < n; i++ {
+		b, err := br.r.ReadByte()
+		br.bytesRead++
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+		if err != nil {
+			br.err = err
+			return
+		}
+		br.n <<= 8
+		br.n |= uint64(b)
+		br.bits += 8
+	}
+}
+
 func (br *bitReader) bitsUsed() uint {
 	return (br.bytesRead * 8) - br.bits
 }
