@@ -116,10 +116,11 @@ func (t *huffmanTree) Decode(br *bitReader) (v uint16) {
 func (t *huffmanTree) buildShortcut() {
 	for b := range t.shortcut {
 		n := uint16(0) // 9 bit (0-258)
+		bi := b
 		for i := 0; i < 8; i++ {
 			node := &t.nodes[n]
 			var v uint16
-			if (b>>(7-i))&1 != 0 {
+			if bi&128 != 0 {
 				n = node.left
 				v = node.leftValue
 			} else {
@@ -130,6 +131,7 @@ func (t *huffmanTree) buildShortcut() {
 				t.shortcut[b] = shortcutEntry(v<<4 | 0x8 | uint16(i)) //#nosec G115 -- This is a false positive
 				break
 			}
+			bi <<= 1
 		}
 		if n != invalidNodeValue {
 			t.shortcut[b] = shortcutEntry(n << 4)
