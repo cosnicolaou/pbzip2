@@ -150,7 +150,7 @@ func newHuffmanTree(lengths []uint8) (huffmanTree, error) {
 	// bzip2 uses a canonical tree so that it can be reconstructed given
 	// only the code length assignments.
 
-	if len(lengths) < 2 || len(lengths) >= math.MaxUint32 {
+	if len(lengths) < 2 || int64(len(lengths)) >= math.MaxUint32 {
 		panic("newHuffmanTree: too few/many symbols")
 	}
 
