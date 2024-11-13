@@ -500,7 +500,7 @@ func (bz2 *reader) readBlock() (err error) {
 			tt := bz2.tt[bufIndex : bufIndex+int64(repeat)]
 			bufIndex += int64(repeat)
 			b := mtf.First()
-			c[b] += uint(repeat)
+			c[b] += uint(repeat) //#nosec G115 -- This is a false positive, repeat always > 0.
 			for i := range tt {
 				tt[i] = uint32(b)
 			}
