@@ -7,6 +7,25 @@ on:
     branches: [main]
 
 jobs:
+  build:
+    strategy:
+      matrix:
+        arch: ["arm64", "amd64", "386"]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Build
+        run: |
+          GOARCH=${{ matrix.arch }} go build .
+
   test:
     strategy:
       matrix:
