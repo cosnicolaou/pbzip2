@@ -444,7 +444,7 @@ func (bz2 *reader) readBlock() (err error) {
 		return StructuralError("tree selector out of range")
 	}
 	currentHuffmanTree := huffmanTrees[treeIndexes[0]]
-	bufIndex := 0 // indexes bz2.buf, the output buffer.
+	bufIndex := int64(0) // indexes bz2.buf, the output buffer.
 	// The output of the move-to-front transform is run-length encoded and
 	// we merge the decoding into the Huffman parsing loop. These two
 	// variables accumulate the repeat count. See the Wikipedia page for
@@ -493,12 +493,12 @@ func (bz2 *reader) readBlock() (err error) {
 		if repeat > 0 {
 			// We have decoded a complete run-length so we need to
 			// replicate the last output symbol.
-			if repeat > bz2.blockSize-bufIndex {
+			if int64(repeat) > int64(bz2.blockSize)-bufIndex {
 				return StructuralError("repeats past end of block")
 			}
 			c := bz2.c[:]
-			tt := bz2.tt[bufIndex : bufIndex+repeat]
-			bufIndex += repeat
+			tt := bz2.tt[bufIndex : bufIndex+int64(repeat)]
+			bufIndex += int64(repeat)
 			b := mtf.First()
 			c[b] += uint(repeat)
 			for i := range tt {
@@ -521,7 +521,7 @@ func (bz2 *reader) readBlock() (err error) {
 		// doesn't need to be encoded and we have |v-1| in the next
 		// line.
 		b := mtf.Decode(int(v - 1))
-		if bufIndex >= bz2.blockSize {
+		if bufIndex >= int64(bz2.blockSize) {
 			return StructuralError("data exceeds block size")
 		}
 		bz2.tt[bufIndex] = uint32(b)
@@ -530,7 +530,7 @@ func (bz2 *reader) readBlock() (err error) {
 	}
 
 	if bufIndex > math.MaxUint32 {
-		return StructuralError("preRLE too large for inverstBWT ")
+		return StructuralError("preRLE too large for invertBWT ")
 	}
 
 	//#nosec G115 -- This is a false positive, bufIndex is < math.MaxUint32.
