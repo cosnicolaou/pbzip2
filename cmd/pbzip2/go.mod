@@ -11,7 +11,7 @@ require (
 	github.com/cosnicolaou/pbzip2 v1.0.3
 	github.com/grailbio/base v0.0.10
 	github.com/schollz/progressbar/v2 v2.15.0
-	golang.org/x/crypto v0.18.0
+	golang.org/x/crypto v0.31.0
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.16.0 // indirect
-	golang.org/x/term v0.16.0 // indirect
+	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/term v0.27.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
