@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"runtime"
 	"strings"
@@ -18,10 +17,7 @@ import (
 	"cloudeng.io/cmdutil"
 	"cloudeng.io/cmdutil/subcmd"
 	"cloudeng.io/errors"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/cosnicolaou/pbzip2"
-	"github.com/grailbio/base/file"
-	"github.com/grailbio/base/file/s3file"
 	"github.com/schollz/progressbar/v2"
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -39,7 +35,7 @@ type catFlags struct {
 type unzipFlags struct {
 	CommonFlags
 	ProgressBar bool   `subcmd:"progress,true,display a progress bar"`
-	OutputFile  string `subcmd:"output,,'output file or s3 path, omit for stdout'"`
+	OutputFile  string `subcmd:"output,,'local output filepath, omit for stdout'"`
 }
 
 type noFlags struct{}
@@ -74,10 +70,6 @@ func init() {
 	cmdSet = subcmd.NewCommandSet(bzcatCmd, unzipCmd, scanCmd, bz2Stats)
 	cmdSet.Document(`decompress and inspect bzip2 files. Files may be local, on S3 or a URL.`)
 
-	file.RegisterImplementation("s3", func() file.Implementation {
-		return s3file.NewImplementation(
-			s3file.NewDefaultProvider(session.Options{}), s3file.Options{})
-	})
 }
 
 func progressBar(ctx context.Context, progressBarWr io.Writer, ch chan pbzip2.Progress, size int64) {
@@ -105,45 +97,34 @@ func progressBar(ctx context.Context, progressBarWr io.Writer, ch chan pbzip2.Pr
 	}
 }
 
-func openFileOrURL(ctx context.Context, name string) (io.Reader, int64, func(context.Context) error, error) {
+func openFile(name string) (io.Reader, int64, func() error, error) {
 	if strings.HasPrefix(name, "http") {
-		resp, err := http.Get(name)
-		if err != nil {
-			return nil, 0, nil, err
-		}
-		return resp.Body,
-			resp.ContentLength,
-			func(context.Context) error {
-				resp.Body.Close()
-				return nil
-			},
-
-			err
+		return nil, 0, nil, fmt.Errorf("http urls not supported")
 	}
-	info, err := file.Stat(ctx, name)
+	info, err := os.Stat(name)
 	if err != nil {
 		return nil, 0, nil, err
 	}
-	file, err := file.Open(ctx, name)
+	file, err := os.Open(name)
 	if err != nil {
 		return nil, 0, nil, err
 	}
-	return file.Reader(ctx), info.Size(), file.Close, nil
+	return file, info.Size(), file.Close, nil
 }
 
-func createFile(ctx context.Context, name string) (io.Writer, func(context.Context) error, error) {
+func createFile(name string) (io.Writer, func() error, error) {
 	if len(name) == 0 {
 		return os.Stdout,
-			func(context.Context) error {
+			func() error {
 				return nil
 			},
 			nil
 	}
-	file, err := file.Create(ctx, name)
+	file, err := os.Create(name)
 	if err != nil {
 		return nil, nil, err
 	}
-	return file.Writer(ctx), file.Close, nil
+	return file, file.Close, nil
 }
 
 func main() {
@@ -183,11 +164,11 @@ func cat(ctx context.Context, values interface{}, args []string) error {
 	}
 
 	for _, inputFile := range args {
-		rd, _, readerCleanup, err := openFileOrURL(ctx, inputFile)
+		rd, _, readerCleanup, err := openFile(inputFile)
 		if err != nil {
 			return err
 		}
-		defer readerCleanup(ctx)
+		defer readerCleanup()
 
 		dc := pbzip2.NewReader(ctx, rd,
 			pbzip2.DecompressionOptions(bzOpts...),
@@ -225,13 +206,13 @@ func unzip(ctx context.Context, values interface{}, args []string) error {
 
 	bzOpts, scanOpts, progressBarCh, isTTY := optsFromUnzipFlags(cl)
 
-	rd, size, readerCleanup, err := openFileOrURL(ctx, args[0])
+	rd, size, readerCleanup, err := openFile(args[0])
 	if err != nil {
 		return err
 	}
-	defer readerCleanup(ctx)
+	defer readerCleanup()
 
-	wr, writerCleanup, err := createFile(ctx, cl.OutputFile)
+	wr, writerCleanup, err := createFile(cl.OutputFile)
 	if err != nil {
 		return err
 	}
@@ -261,7 +242,7 @@ func unzip(ctx context.Context, values interface{}, args []string) error {
 	errs := &errors.M{}
 	_, err = io.Copy(wr, dc)
 	errs.Append(err)
-	err = writerCleanup(ctx)
+	err = writerCleanup()
 	errs.Append(err)
 
 	if progressBarCh != nil {
