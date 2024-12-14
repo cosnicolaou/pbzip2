@@ -17,11 +17,11 @@ import (
 )
 
 func scanFile(ctx context.Context, name string) error {
-	rd, _, readerCleanup, err := openFileOrURL(ctx, name)
+	rd, _, readerCleanup, err := openFile(name)
 	if err != nil {
 		return err
 	}
-	defer readerCleanup(ctx)
+	defer readerCleanup()
 	sc := pbzip2.NewScanner(rd)
 	for sc.Scan(ctx) {
 		block := sc.Block()
@@ -41,15 +41,15 @@ func scan(ctx context.Context, values interface{}, args []string) error {
 }
 
 func bz2StatsFile(ctx context.Context, name string) error {
-	rd, _, readerCleanup, err := openFileOrURL(ctx, name)
+	rd, _, readerCleanup, err := openFile(name)
 	if err != nil {
 		return err
 	}
-	defer readerCleanup(ctx)
+	defer readerCleanup()
 
 	ctx, cancel := context.WithCancel(ctx)
 	cmdutil.HandleSignals(func() {
-		readerCleanup(ctx)
+		readerCleanup()
 		cancel()
 	}, os.Interrupt)
 

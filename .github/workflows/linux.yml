@@ -26,6 +26,7 @@ jobs:
       - name: Test
         run: |
           go test --race --covermode=atomic ./...
+          GOARCH=386 go test -short ./...
 
   linting:
     runs-on: ubuntu-latest
