@@ -189,6 +189,9 @@ func (bz2 *reader) readFromBlock(buf []byte) int {
 			for {
 				repeats--
 				if bw.put(byte(bz2.lastByte)) {
+					if repeats == 0 {
+						bz2.lastByte = -1
+					}
 					bz2.repeats = repeats
 					return int(bw.n) //#nosec G115 -- This is a false positive
 				}
