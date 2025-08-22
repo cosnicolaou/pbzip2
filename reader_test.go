@@ -90,7 +90,7 @@ func testIOReader(t *testing.T, readAll func(io.Reader) ([]byte, error)) {
 	// Use a fixed size pool.
 	pool := pbzip2.CreateConcurrencyPool(2)
 
-	for _, name := range []string{"empty", "hello", "300KB3_Random", "900KB2_Random", "1033KB4_Random"} {
+	for _, name := range []string{"empty", "hello", "300KB3_Random", "900KB2_Random", "1033KB4_Random", "81e3299e32e0e7854efe66ba0dfd776f474d6e5c"} {
 		filename := bzip2Files[name]
 		stdlibData := readBzipFile(t, filename)
 
@@ -282,4 +282,24 @@ type errorReader struct{}
 
 func (er *errorReader) Read(buf []byte) (int, error) {
 	return 1, fmt.Errorf("oops")
+}
+
+
+func TestProblemFiles(t *testing.T) {
+	ctx := context.Background()
+	files := []string{
+		"issue_49",
+	}
+	for _, filename := range files {
+		filename = filepath.Join("testdata", "problematic",filename)
+		t.Run(filename, func(t *testing.T) {
+			rd := openBzipFile(t, filename)
+			drd := pbzip2.NewReader(ctx, rd)
+			_, err := io.ReadAll(drd)
+			if err != nil {
+				t.Errorf("%v: readAll failed: %v", filename, err)
+			}
+			rd.Close()
+		})
+	}
 }
