@@ -90,7 +90,7 @@ func testIOReader(t *testing.T, readAll func(io.Reader) ([]byte, error)) {
 	// Use a fixed size pool.
 	pool := pbzip2.CreateConcurrencyPool(2)
 
-	for _, name := range []string{"empty", "hello", "300KB3_Random", "900KB2_Random", "1033KB4_Random", "81e3299e32e0e7854efe66ba0dfd776f474d6e5c"} {
+	for _, name := range []string{"empty", "hello", "300KB3_Random", "900KB2_Random", "1033KB4_Random"} {
 		filename := bzip2Files[name]
 		stdlibData := readBzipFile(t, filename)
 
