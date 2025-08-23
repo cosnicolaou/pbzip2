@@ -283,3 +283,22 @@ type errorReader struct{}
 func (er *errorReader) Read(buf []byte) (int, error) {
 	return 1, fmt.Errorf("oops")
 }
+
+func TestProblemFiles(t *testing.T) {
+	ctx := context.Background()
+	files := []string{
+		"issue_49",
+	}
+	for _, filename := range files {
+		filename = filepath.Join("testdata", "problematic", filename)
+		t.Run(filename, func(t *testing.T) {
+			rd := openBzipFile(t, filename)
+			drd := pbzip2.NewReader(ctx, rd)
+			_, err := io.ReadAll(drd)
+			if err != nil {
+				t.Errorf("%v: readAll failed: %v", filename, err)
+			}
+			rd.Close()
+		})
+	}
+}
